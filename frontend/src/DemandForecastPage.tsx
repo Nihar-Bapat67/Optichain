@@ -132,7 +132,7 @@ function BreakdownPie({ breakdown }: { breakdown: ForecastResponse['breakdown'] 
             </Pie>
             <Tooltip
               contentStyle={{ background: '#0f1420', border: '1px solid #1e293b', borderRadius: 8 }}
-              formatter={(val: number) => [`${val.toFixed(0)} units`, '']}
+              formatter={(val) => [`${Number(val ?? 0).toFixed(0)} units`, '']}
             />
           </PieChart>
         </ResponsiveContainer>
@@ -171,7 +171,7 @@ function LiftCurveChart({ liftCurve }: { liftCurve: number[] }) {
         <YAxis tick={{ fill: '#64748b', fontSize: 11 }} unit="%" />
         <Tooltip
           contentStyle={{ background: '#0f1420', border: '1px solid #1e293b', borderRadius: 8 }}
-          formatter={(val: number) => [`${val.toFixed(2)}%`, 'Lift']}
+          formatter={(val) => [`${Number(val ?? 0).toFixed(2)}%`, 'Lift']}
         />
         <Area
           type="monotone"
