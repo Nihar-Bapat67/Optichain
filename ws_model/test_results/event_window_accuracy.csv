@@ -1,5 +1,5 @@
 event,event_date,event_window_wmape,normal_days_wmape,event_window_bias,event_n
-thanksgiving,2024-11-28,23.5611,13.3248,-6.7369,540
-black_friday,2024-11-29,24.7122,12.6302,-12.0208,540
-cyber_monday,2024-12-02,24.645,12.71,-13.2956,540
-christmas,2024-12-25,13.1618,17.327,4.6829,540
+thanksgiving,2024-11-28,23.509,13.2438,-5.8059,540
+black_friday,2024-11-29,24.4638,12.6263,-10.908,540
+cyber_monday,2024-12-02,24.5184,12.6575,-11.9807,540
+christmas,2024-12-25,12.908,17.3329,4.6623,540

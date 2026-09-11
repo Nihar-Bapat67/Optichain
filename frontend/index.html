@@ -1,13 +1,51 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Supply Chain Control Tower</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <title>Control Tower — Supply Chain Intelligence</title>
+    <meta
+      name="description"
+      content="AI-driven supply chain control tower: demand forecasting, inventory risk register, and influencer uplift modelling."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#090b10" media="(prefers-color-scheme: dark)" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@500;600;700&display=swap"
+    />
+
+    <script>
+      /*
+       * Resolve the theme before first paint. Without this the document renders
+       * with the wrong palette for a frame, producing a visible flash.
+       * Mirrors the logic in src/providers/ThemeProvider.tsx.
+       */
+      (function () {
+        try {
+          var stored = localStorage.getItem('control-tower-theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = stored === 'dark' || ((!stored || stored === 'system') && prefersDark);
+          document.documentElement.classList.toggle('dark', isDark);
+        } catch (_) {
+          /* localStorage unavailable (private mode) — keep the default dark class. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p style="font-family: system-ui, sans-serif; padding: 2rem">
+        Control Tower requires JavaScript to render its dashboards. Please enable it and reload.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

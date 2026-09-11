@@ -1,32 +1,227 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@500;600;700&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  @apply bg-surface text-slate-300 antialiased;
-}
+/*
+ * Design tokens.
+ * Values are space-separated RGB channels so Tailwind's <alpha-value> can
+ * compose opacity on top of them (e.g. `bg-accent/10`).
+ */
+@layer base {
+  :root {
+    /* ── Light ────────────────────────────────────────────────────────── */
+    --c-canvas: 250 250 251;
+    --c-surface: 255 255 255;
+    --c-surface-raised: 255 255 255;
+    --c-surface-overlay: 255 255 255;
+    --c-surface-sunken: 245 246 248;
+    --c-border: 228 230 235;
+    --c-border-strong: 209 213 220;
 
-#root {
-  min-height: 100vh;
+    --c-text: 16 20 28;
+    --c-text-muted: 90 99 115;
+    --c-text-subtle: 134 143 158;
+    --c-text-inverted: 255 255 255;
+
+    --c-accent: 47 106 245;
+    --c-accent-hover: 32 88 219;
+    --c-accent-soft: 235 242 255;
+    --c-accent-border: 191 214 254;
+    --c-accent-fg: 255 255 255;
+
+    --c-brand: 124 58 237;
+    --c-brand-soft: 244 240 255;
+    --c-brand-border: 214 199 253;
+    --c-brand-fg: 255 255 255;
+
+    --c-danger: 208 42 56;
+    --c-danger-soft: 254 240 241;
+    --c-danger-border: 250 205 209;
+    --c-danger-fg: 255 255 255;
+
+    --c-warn: 176 106 0;
+    --c-warn-soft: 255 246 230;
+    --c-warn-border: 250 219 165;
+    --c-warn-fg: 255 255 255;
+
+    --c-ok: 22 128 87;
+    --c-ok-soft: 235 250 243;
+    --c-ok-border: 178 232 208;
+    --c-ok-fg: 255 255 255;
+
+    --c-info: 8 122 168;
+    --c-info-soft: 233 248 253;
+    --c-info-border: 175 224 240;
+    --c-info-fg: 255 255 255;
+
+    --c-chart-1: 47 106 245;
+    --c-chart-2: 124 58 237;
+    --c-chart-3: 22 128 87;
+    --c-chart-4: 199 96 6;
+    --c-chart-5: 8 122 168;
+
+    --shadow-xs: 0 1px 2px 0 rgb(16 20 28 / 0.04);
+    --shadow-sm: 0 1px 3px 0 rgb(16 20 28 / 0.06), 0 1px 2px -1px rgb(16 20 28 / 0.04);
+    --shadow-md: 0 4px 12px -2px rgb(16 20 28 / 0.07), 0 2px 4px -2px rgb(16 20 28 / 0.04);
+    --shadow-lg: 0 12px 28px -6px rgb(16 20 28 / 0.10), 0 4px 10px -4px rgb(16 20 28 / 0.05);
+    --shadow-xl: 0 24px 48px -12px rgb(16 20 28 / 0.16);
+
+    color-scheme: light;
+  }
+
+  .dark {
+    /* ── Dark ─────────────────────────────────────────────────────────── */
+    --c-canvas: 9 11 16;
+    --c-surface: 15 18 25;
+    --c-surface-raised: 20 24 33;
+    --c-surface-overlay: 26 31 42;
+    --c-surface-sunken: 12 15 21;
+    --c-border: 34 41 55;
+    --c-border-strong: 49 58 76;
+
+    --c-text: 237 240 245;
+    --c-text-muted: 158 168 184;
+    --c-text-subtle: 110 120 136;
+    --c-text-inverted: 12 15 21;
+
+    --c-accent: 88 145 255;
+    --c-accent-hover: 120 167 255;
+    --c-accent-soft: 24 37 66;
+    --c-accent-border: 45 72 124;
+    --c-accent-fg: 255 255 255;
+
+    --c-brand: 167 129 250;
+    --c-brand-soft: 39 30 66;
+    --c-brand-border: 71 55 118;
+    --c-brand-fg: 255 255 255;
+
+    --c-danger: 248 113 133;
+    --c-danger-soft: 61 24 33;
+    --c-danger-border: 105 40 52;
+    --c-danger-fg: 255 255 255;
+
+    --c-warn: 250 189 74;
+    --c-warn-soft: 58 41 15;
+    --c-warn-border: 104 72 24;
+    --c-warn-fg: 24 18 6;
+
+    --c-ok: 62 208 143;
+    --c-ok-soft: 15 48 37;
+    --c-ok-border: 26 84 63;
+    --c-ok-fg: 8 26 20;
+
+    --c-info: 56 189 232;
+    --c-info-soft: 13 46 58;
+    --c-info-border: 22 80 100;
+    --c-info-fg: 6 24 30;
+
+    --c-chart-1: 88 145 255;
+    --c-chart-2: 167 129 250;
+    --c-chart-3: 62 208 143;
+    --c-chart-4: 250 189 74;
+    --c-chart-5: 56 189 232;
+
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.30);
+    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.40), 0 1px 2px -1px rgb(0 0 0 / 0.30);
+    --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.30);
+    --shadow-lg: 0 12px 28px -6px rgb(0 0 0 / 0.55), 0 4px 10px -4px rgb(0 0 0 / 0.35);
+    --shadow-xl: 0 24px 48px -12px rgb(0 0 0 / 0.65);
+
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: rgb(var(--c-border));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    @apply bg-canvas font-sans text-base text-content antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* A single, consistent focus treatment everywhere. Pointer users never
+     see it; keyboard users always do. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    background-color: rgb(var(--c-accent) / 0.22);
+  }
+
+  /* Recharts injects focusable wrappers that trap tab order without adding value. */
+  .recharts-wrapper:focus,
+  .recharts-surface:focus {
+    outline: none;
+  }
+
+  /* Native date/number controls default to light glyphs; keep them legible. */
+  .dark input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.55);
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    margin-left: 0.25rem;
+  }
 }
 
 @layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.4s ease-out forwards;
+  /* Skeleton sheen. Kept as a utility so any block can opt in. */
+  .skeleton-sheen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--c-text) / 0.06),
+      transparent
+    );
+    animation: shimmer 1.6s infinite;
   }
-  .animate-success-flash {
-    animation: successFlash 1.5s ease-out forwards;
+
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--c-border-strong)) transparent;
   }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
   }
-  @keyframes successFlash {
-    0% { outline: 2px solid rgba(139, 92, 246, 0); }
-    10% { outline: 2px solid rgba(139, 92, 246, 0.6); outline-offset: 4px; }
-    100% { outline: 2px solid rgba(139, 92, 246, 0); outline-offset: 12px; }
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--c-border-strong));
+    border-radius: 9999px;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Respect the OS-level motion preference across every animated surface. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -105,12 +105,40 @@ Simulate real-world scenarios (e.g., "What if this influencer campaign reaches 1
 
 | Directory | Description |
 | :--- | :--- |
-| `backend/` | FastAPI application, ML inference logic, and API endpoints. |
-| `frontend/` | React/TypeScript dashboard with Tailwind CSS and Framer Motion. |
+| `backend/app/api/` | Route modules, grouped by domain. |
+| `backend/app/core/` | Logging, middleware, and the loaded-model registry. |
+| `backend/app/services/` | ML inference, risk engine, and brief generation. |
+| `frontend/src/components/` | Design-system primitives, layout, and chart shells. |
+| `frontend/src/features/` | Dashboard and forecast feature components. |
+| `frontend/src/pages/` | Route-level pages (lazy-loaded). |
 | `notebooks/` | Research & development Jupyter notebooks for ML models. |
 | `scripts/` | Data engineering, seeding, and model training utilities. |
 | `models/` | Serialized model artifacts (.pkl). |
 | `data/` | Raw and engineered datasets (CSV). |
+
+See [`frontend/README.md`](frontend/README.md) for the design system, theming
+and accessibility conventions.
+
+---
+
+## 🧱 Engineering Notes
+
+**Frontend** — React 19 + TypeScript (strict) + Vite + Tailwind. A single token
+layer drives light, dark and system themes across every surface, including
+charts. Pages are code-split; vendors are chunked separately for cache
+stability. Linting covers TypeScript, React Hooks and `jsx-a11y`.
+
+**Backend** — FastAPI with structured logging, per-request correlation ids
+(`X-Request-ID`), security headers, gzip, and validated environment settings.
+Model artifacts load once at startup into a typed registry; anything missing is
+reported through `/api/health` rather than failing the service.
+
+**API documentation** — interactive docs are served at `/docs` (Swagger UI) and
+`/redoc` once the backend is running.
+
+> **CORS note:** `CORS_ORIGINS` defaults to `*`, which disables credentialed
+> cross-origin requests (browsers reject a wildcard origin when credentials are
+> sent). Set an explicit comma-separated origin list for production.
 
 ---
 

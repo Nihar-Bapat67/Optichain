@@ -1,9 +1,22 @@
-from pathlib import Path
+"""Application settings.
 
+Every path the API reads is derived here, so relocating data or model
+directories is a configuration change rather than a code change.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Literal
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def _default_project_root() -> Path:
+    """Repository root, resolved relative to this file (backend/app/config.py)."""
     return Path(__file__).resolve().parent.parent.parent
 
 
@@ -14,6 +27,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # ── Service identity ──────────────────────────────────────────────────
+    app_name: str = "Supply Chain Analytics API"
+    app_version: str = "1.0.0"
+    log_level: LogLevel = "INFO"
+    # Only enable behind TLS; sending HSTS over plain HTTP can lock a browser
+    # out of localhost for a year.
+    enable_hsts: bool = False
+
+    # ── Filesystem layout ─────────────────────────────────────────────────
     project_root: Path | None = None
     data_dir: str = "ws_demand_dataset"
     ws_model_dir: str = "ws_model"
@@ -23,8 +45,26 @@ class Settings(BaseSettings):
     analytics_dir: str = "analytics"
     case_study_data_dir: str = "data"
     conti_model_dir: str = "models"
+
+    # ── HTTP ──────────────────────────────────────────────────────────────
     cors_origins: str = "*"
 
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _normalise_log_level(cls, value: object) -> object:
+        """Accept lower-case values such as `debug` from the environment."""
+        return value.upper() if isinstance(value, str) else value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _validate_cors_origins(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "CORS_ORIGINS must not be empty — use '*' or a comma-separated origin list."
+            )
+        return value
+
+    # ── Derived paths ─────────────────────────────────────────────────────
     def root(self) -> Path:
         if self.project_root is not None:
             return Path(self.project_root).resolve()
