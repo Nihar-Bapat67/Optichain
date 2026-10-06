@@ -1,7 +1,14 @@
 const base = import.meta.env.VITE_API_URL ?? '';
 
+/** Where requests go, for user-facing messages ("this origin" when proxied). */
+export const API_ORIGIN = base ? base.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'this origin';
+
 /** Requests are aborted after this long so a hung backend can't spin forever. */
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+export interface RequestOptions {
+  timeoutMs?: number;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -49,9 +56,14 @@ function extractDetail(body: string, fallback: string): string {
   return body.slice(0, 300) || fallback;
 }
 
-async function request<T>(path: string, init: RequestInit, signal?: AbortSignal): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+  options: RequestOptions = {},
+): Promise<T> {
   const timeoutController = new AbortController();
-  const timer = setTimeout(() => timeoutController.abort(), DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => timeoutController.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
   // Combine the caller's signal (component unmount) with our timeout.
   const onCallerAbort = () => timeoutController.abort();
@@ -88,8 +100,24 @@ async function request<T>(path: string, init: RequestInit, signal?: AbortSignal)
   }
 }
 
-export function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  return request<T>(path, { method: 'GET' }, signal);
+export function fetchJson<T>(path: string, signal?: AbortSignal, options?: RequestOptions): Promise<T> {
+  return request<T>(path, { method: 'GET' }, signal, options);
+}
+
+/**
+ * True for failures worth retrying while a sleeping host spins up: unreachable,
+ * timed out, or a gateway error from the platform's proxy (502/503/504).
+ */
+export function isRetryable(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  return err.isNetworkError || err.status === 502 || err.status === 503 || err.status === 504;
+}
+
+/** Explains an unreachable API in terms that fit dev vs a deployed build. */
+export function unreachableHint(): string {
+  return import.meta.env.DEV
+    ? 'Confirm the backend is running: from backend/, run python -m uvicorn app.main:app --reload --port 8000'
+    : `The API at ${API_ORIGIN} did not respond. If it is on a free hosting tier it may still be starting — try again in a minute.`;
 }
 
 export function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {

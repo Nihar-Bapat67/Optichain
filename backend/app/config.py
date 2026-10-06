@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     case_study_data_dir: str = "data"
     conti_model_dir: str = "models"
 
+    # ── Database ──────────────────────────────────────────────────────────
+    # Any SQLAlchemy URL. Empty → SQLite file at <root>/backend/var/optichain.sqlite3.
+    database_url: str = ""
+    # Build the database from the CSV sources at startup when it is empty, and
+    # re-ingest when a source file's checksum no longer matches the last load.
+    db_auto_init: bool = True
+    db_auto_refresh: bool = True
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_backup_keep: int = 5
+    db_backup_dir: str = ""
+    # How often (seconds) the in-process cache re-checks the data version.
+    cache_version_ttl_s: float = 5.0
+
     # ── HTTP ──────────────────────────────────────────────────────────────
     cors_origins: str = "*"
 
@@ -105,6 +119,22 @@ class Settings(BaseSettings):
 
     def conti_features_path(self) -> Path:
         return self.root() / self.conti_model_dir / "conti_features.json"
+
+    def var_dir(self) -> Path:
+        return self.root() / "backend" / "var"
+
+    def sqlite_path(self) -> Path:
+        return self.var_dir() / "optichain.sqlite3"
+
+    def resolved_database_url(self) -> str:
+        if self.database_url.strip():
+            return self.database_url.strip()
+        return f"sqlite:///{self.sqlite_path().as_posix()}"
+
+    def backup_dir(self) -> Path:
+        if self.db_backup_dir.strip():
+            return Path(self.db_backup_dir.strip())
+        return self.var_dir() / "backups"
 
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

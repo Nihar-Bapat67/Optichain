@@ -5,39 +5,37 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
-from app.api.deps import demand_frame
+from app.api.deps import cached_json
 from app.core.logging import get_logger
+from app.db.repository import store
 from app.schemas import BriefResponse, SimulatePoint, SimulateRequest, SimulateResponse
-from app.services import tables
 from app.services.brief import build_weekly_brief
-from app.services.risk_engine import compute_risks
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["risk"])
 
 
-@router.get("/api/risk/skus", summary="Stockout and overstock flags per SKU × warehouse")
-def risk_skus() -> dict[str, Any]:
-    demand = demand_frame()
-    inv = tables.load_inventory()
-    if demand is None or inv is None:
-        raise HTTPException(503, "Need demand predictions and inventory.csv.")
+def _require_demand_and_inventory(message: str) -> None:
+    if not (store.has_demand() and store.has_dataset("inventory")):
+        raise HTTPException(503, message)
 
-    risks = compute_risks(demand, inv)
-    return {"risks": risks, "count": len(risks)}
+
+@router.get("/api/risk/skus", summary="Stockout and overstock flags per SKU × warehouse")
+def risk_skus(request: Request) -> Response:
+    def build() -> dict[str, Any]:
+        _require_demand_and_inventory("Need demand predictions and inventory.csv.")
+        risks = store.risks()
+        return {"risks": risks, "count": len(risks)}
+
+    return cached_json(request, build)
 
 
 @router.get("/api/brief/weekly", response_model=BriefResponse, summary="Weekly buyer brief")
 def brief_weekly() -> BriefResponse:
-    demand = demand_frame()
-    inv = tables.load_inventory()
-    sig = tables.load_signals()
-    if demand is None or inv is None:
-        raise HTTPException(503, "Need demand and inventory for brief generation.")
-
-    return build_weekly_brief(demand, inv, sig)
+    _require_demand_and_inventory("Need demand and inventory for brief generation.")
+    return build_weekly_brief(store.risks(), store.signal_spikes())
 
 
 @router.post(
@@ -46,10 +44,8 @@ def brief_weekly() -> BriefResponse:
     summary="Project 14-day inventory drawdown under adjusted assumptions",
 )
 def simulate(body: SimulateRequest) -> SimulateResponse:
-    demand = demand_frame()
-    inv = tables.load_inventory()
-    if demand is None or inv is None:
-        raise HTTPException(503, "Need demand and inventory.")
+    _require_demand_and_inventory("Need demand and inventory.")
+    inv = store.inventory()
 
     row = inv[(inv["sku_id"] == body.sku_id) & (inv["warehouse_id"] == body.warehouse_id)]
     if row.empty:
@@ -59,7 +55,7 @@ def simulate(body: SimulateRequest) -> SimulateResponse:
     stock = float(r["stock_on_hand"]) + float(r["on_order"]) + float(body.extra_on_order)
     lead = max(1, int(r["lead_time_days"]) + int(body.lead_time_delta_days))
 
-    sku_d = demand[demand["sku_id"] == body.sku_id].sort_values("date")
+    sku_d = store.demand_for_sku(body.sku_id)
     if sku_d.empty:
         raise HTTPException(404, "No demand history for SKU.")
 

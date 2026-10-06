@@ -24,13 +24,31 @@ LIFT_HOURS = [6, 12, 24, 48, 72, 96]
 def _get_profile(city: str):
     return CITY_PROFILES.get(city, DEFAULT_PROFILE)
 
-def _synthesize_m1_features(product_id: str, city: str, date_str: str, feature_names: list[str]) -> pd.DataFrame:
+
+def _stable_hash(value: str) -> int:
+    # Built-in hash() is salted per process (PYTHONHASHSEED), which made the same
+    # request return different forecasts after every restart.
+    return int(hashlib.md5(value.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def _synthesize_m1_features(
+    product_id: str,
+    city: str,
+    date_str: str,
+    feature_names: list[str],
+    sku_profile: dict | None = None,
+) -> pd.DataFrame:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     profile = _get_profile(city)
-    
-    # Map brand/category based on SKU prefix for demo
-    brand_enc = 0 if "WS" in product_id else 1 if "PB" in product_id else 2
-    cat_enc = hash(product_id) % 10
+
+    if sku_profile is not None:
+        # Catalogue SKU: use the encodings the model was trained with.
+        brand_enc = int(sku_profile["brand_enc"])
+        cat_enc = int(sku_profile["category_enc"])
+    else:
+        # Map brand/category based on SKU prefix for demo
+        brand_enc = 0 if "WS" in product_id else 1 if "PB" in product_id else 2
+        cat_enc = _stable_hash(product_id) % 10
     
     feats = {}
     for col in feature_names:
@@ -81,7 +99,7 @@ def _synthesize_m2_features(influencer: dict, feature_names: list[str]) -> pd.Da
         elif col == "ws_flag": data[col] = 1
         else:
             # Deterministic noise for other demo feats
-            data[col] = (hash(col) % 100) / 100.0
+            data[col] = (_stable_hash(col) % 100) / 100.0
             
     return pd.DataFrame([data])
 
@@ -125,9 +143,14 @@ def run_forecast_agent(
     influencer: dict | None,
     campaign_active: bool,
     models: dict[str, Any],
+    sku_profile: dict | None = None,
+    stored_features: dict | None = None,
 ) -> dict:
     """
     Execute the three-model pipeline using actual loaded ML artifacts.
+
+    `stored_features` is the engineered feature row for this SKU-day from the
+    training table; when given, MODEL1 sees exactly its training inputs.
     """
     insights: list[str] = []
 
@@ -135,9 +158,22 @@ def run_forecast_agent(
     m1 = models.get("model1")
     m1_feats = models.get("model1_feats")
     if m1 and m1_feats:
-        X1 = _synthesize_m1_features(product_id, city, date, m1_feats)
-        baseline = float(m1.predict(X1)[0])
-        insights.append("Baseline demand synthesized from XGBoost signals.")
+        if stored_features is not None and all(f in stored_features for f in m1_feats):
+            X1 = pd.DataFrame([{f: stored_features[f] for f in m1_feats}])
+            baseline = float(m1.predict(X1)[0])
+            insights.append(
+                f"Baseline from the stored engineered features for {product_id} on {date} "
+                "(identical to the model's training inputs)."
+            )
+        else:
+            X1 = _synthesize_m1_features(product_id, city, date, m1_feats, sku_profile)
+            baseline = float(m1.predict(X1)[0])
+            insights.append("Baseline demand synthesized from XGBoost signals.")
+            if sku_profile is not None:
+                insights.append(
+                    "Date is outside the stored history, so lag and event features use defaults; "
+                    "brand and category encodings come from the catalogue."
+                )
     else:
         baseline = 150.0 # Fallback
         insights.append("⚠️ Baseline using fallback (Model 1 not loaded).")

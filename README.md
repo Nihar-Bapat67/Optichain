@@ -79,6 +79,18 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
 ```
 
+The API serves from a SQLite database (`backend/var/optichain.sqlite3`) built from the CSVs in `analytics/` and `data/`. It is created automatically on first start and reloaded whenever a source CSV changes. To rebuild it by hand (validates, backs up, and verifies every row before committing), or to point at another database with `DATABASE_URL`:
+```bash
+python -m app.db.ingest --force
+```
+
+Tests and benchmark:
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests
+python scripts/benchmark.py --out bench.json
+```
+
 **Frontend (React + Vite):**
 ```bash
 cd frontend

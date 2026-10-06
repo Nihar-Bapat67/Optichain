@@ -1,0 +1,58 @@
+{
+  "meta_skus": {
+    "status": 200,
+    "sha256": "7d9a153830bf917dbc7a05a3ec61a689957ed1d569221cbe679cf0773d5dd4c5"
+  },
+  "inventory_summary": {
+    "status": 200,
+    "sha256": "721c0890ee801d9c88b3402b2f79fe9e00cbef18d476b9e191ccc2bb5d321563"
+  },
+  "demand_ts": {
+    "status": 200,
+    "sha256": "cc57b3ff2883c6b66b12272d9a45d93d55d921ee38f4facce360c79cf2e40bdb"
+  },
+  "demand_ts_range": {
+    "status": 200,
+    "sha256": "81ca43b1b0c94c4fbb70ceff15299719dda336627db968844e0950177e93b832"
+  },
+  "demand_ts_404": {
+    "status": 404,
+    "sha256": "a9f300509c37feec8de55d4a08c0fcb71e11e94fb35b48584987b94cfcc7b6a2"
+  },
+  "signals_ts_sku": {
+    "status": 200,
+    "sha256": "d096daa7f762a30fe652a2e62d688fcd56fa98cd40555bb362266ea9a0c23ee2"
+  },
+  "signals_ts_all": {
+    "status": 200,
+    "sha256": "0d17950fe943406f0f5b18ffbd286850d68aa8c10c36096eadcf8db95de693c4"
+  },
+  "kpis": {
+    "status": 200,
+    "sha256": "18da78c4e7d3d939b24737144e2c71596112068fd410784a7a9985f8ec1b55bf"
+  },
+  "risk_skus": {
+    "status": 200,
+    "sha256": "3790287bf106eee1872c6450dfd25fbd9dfd142d021dc2fba3cec86dc345c739"
+  },
+  "brief_weekly": {
+    "status": 200,
+    "sha256": "832a67383dd172e066e71294b862a2b0ee3f250723e5ddb374e6c3ec8c91abc0"
+  },
+  "influencer_summary": {
+    "status": 200,
+    "sha256": "89742baed049c6ca350ac0f9adaf9dbe7944c938688c045afbe3b7218f850289"
+  },
+  "simulate": {
+    "status": 200,
+    "sha256": "dd282d341dfdb1dbf6caaf390671a32e2b5ff0c24f20aa1ab630308baeff526c"
+  },
+  "simulate_adjusted": {
+    "status": 200,
+    "sha256": "a956fc72528716214b662644508033208d44ad22bc5f069dc045378baa9ebddb"
+  },
+  "simulate_404": {
+    "status": 404,
+    "sha256": "1e315d955bfd24af5d80663c73a4d21944af46bc0508a7f24a935835c1a108b1"
+  }
+}

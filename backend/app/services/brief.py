@@ -2,21 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pandas as pd
-
 from app.schemas import BriefResponse
-from app.services.risk_engine import compute_risks, count_signal_spikes
 
 
-def build_weekly_brief(
-    demand: pd.DataFrame,
-    inventory: pd.DataFrame,
-    signals: pd.DataFrame | None,
-) -> BriefResponse:
-    risks = compute_risks(demand, inventory)
+def build_weekly_brief(risks: list[dict], spikes: int) -> BriefResponse:
+    """Render the brief from a compute_risks() result and a signal-spike count."""
     stockouts = [r for r in risks if r["risk_type"] == "stockout"]
     overstocks = [r for r in risks if r["risk_type"] == "overstock"]
-    spikes = count_signal_spikes(signals) if signals is not None else 0
 
     top_so = stockouts[:5]
     top_os = overstocks[:3]

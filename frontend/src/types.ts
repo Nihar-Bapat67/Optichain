@@ -57,6 +57,17 @@ export type Brief = {
 export type SkuMeta = { sku_id: string; category: string };
 export type SkuMetaResponse = { skus: SkuMeta[]; count: number };
 
+// ── GET /api/meta/dataset ───────────────────────────────────────────────────
+export type DatasetSummary = {
+  data_version: number | null;
+  loaded_at: string | null;
+  backend: string;
+  date_from: string | null;
+  date_to: string | null;
+  sku_count: number;
+  datasets: Record<string, { rows: number; sha256: string }>;
+};
+
 // ── GET /api/demand/timeseries ──────────────────────────────────────────────
 export type DemandPoint = {
   date: string;

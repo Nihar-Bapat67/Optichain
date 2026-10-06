@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Boxes,
+  Database,
   PackageX,
   Radio,
   Terminal,
@@ -10,6 +11,7 @@ import {
 
 import { ChartCard } from '../components/charts/ChartCard';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { WakingState } from '../components/WakingState';
 import { Field } from '../components/ui/Field';
 import { Select } from '../components/ui/Select';
 import { StatCard } from '../components/ui/StatCard';
@@ -27,10 +29,11 @@ import { RiskTable } from '../features/dashboard/RiskTable';
 import { SignalChart } from '../features/dashboard/SignalChart';
 import { SimulationPanel } from '../features/dashboard/SimulationPanel';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { fetchJson } from '../lib/api';
+import { fetchJson, unreachableHint } from '../lib/api';
 import { formatNumber } from '../lib/format';
 import type {
   Brief,
+  DatasetSummary,
   DemandTimeseries,
   Health,
   InfluencerSummary,
@@ -44,6 +47,8 @@ interface DashboardPageProps {
   health: Health | null;
   healthError: string | null;
   healthLoading: boolean;
+  /** Set while the health check is retrying against a host that is starting up. */
+  wakingSince: number | null;
   onRetryHealth: () => void;
   /** Bumped by the topbar Refresh button to force a reload of all panels. */
   refreshToken: number;
@@ -95,10 +100,30 @@ function SetupRequired({ health }: { health: Health | null }) {
   );
 }
 
+/** One-line provenance for the numbers on the page. */
+function DatasetLine({ summary }: { summary: DatasetSummary | null }) {
+  if (!summary?.date_to) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-content-subtle">
+      <Database aria-hidden className="h-3.5 w-3.5" />
+      <span>
+        History {summary.date_from} → {summary.date_to}
+      </span>
+      <span aria-hidden>·</span>
+      <span>{summary.sku_count} SKUs</span>
+      <span aria-hidden>·</span>
+      <span>
+        Data v{summary.data_version} ({summary.backend})
+      </span>
+    </p>
+  );
+}
+
 export default function DashboardPage({
   health,
   healthError,
   healthLoading,
+  wakingSince,
   onRetryHealth,
   refreshToken,
 }: DashboardPageProps) {
@@ -133,6 +158,13 @@ export default function DashboardPage({
     { enabled: dataReady },
   );
 
+  const dataset = useAsyncData<DatasetSummary | null>(
+    // Informational only; older backends without this endpoint simply omit the line.
+    (signal) => fetchJson<DatasetSummary>('/api/meta/dataset', signal).catch(() => null),
+    [refreshToken],
+    { enabled: dataReady },
+  );
+
   const influencer = useAsyncData<InfluencerSummary | null>(
     (signal) =>
       // Optional panel: a missing metrics file should not fail the dashboard.
@@ -163,7 +195,8 @@ export default function DashboardPage({
   const signalsLoader = useCallback(
     (signal: AbortSignal) =>
       fetchJson<SignalTimeseries>(
-        `/api/signals/timeseries?sku_id=${encodeURIComponent(activeSku)}`,
+        // Server-side filter: ~9 KB instead of the SKU's full ~150 KB history.
+        `/api/signals/timeseries?sku_id=${encodeURIComponent(activeSku)}&signal_type=social&limit=90`,
         signal,
       ),
     [activeSku],
@@ -180,6 +213,8 @@ export default function DashboardPage({
   );
 
   // ── Gate states ───────────────────────────────────────────────────────────
+  if (healthLoading && wakingSince !== null) return <WakingState startedAt={wakingSince} />;
+
   if (healthLoading) {
     return (
       <div className="space-y-6">
@@ -198,13 +233,19 @@ export default function DashboardPage({
       <ErrorState
         title="Cannot reach the API"
         description={
-          <>
-            {healthError}. Confirm the backend is running on port 8000 with{' '}
-            <code className="rounded bg-surface-sunken px-1 py-0.5 font-mono text-xs">
-              python -m uvicorn app.main:app --reload --port 8000
-            </code>
-            .
-          </>
+          import.meta.env.DEV ? (
+            <>
+              {healthError}. Confirm the backend is running on port 8000 with{' '}
+              <code className="rounded bg-surface-sunken px-1 py-0.5 font-mono text-xs">
+                python -m uvicorn app.main:app --reload --port 8000
+              </code>
+              .
+            </>
+          ) : (
+            <>
+              {healthError}. {unreachableHint()}
+            </>
+          )
         }
         onRetry={onRetryHealth}
       />
@@ -215,6 +256,8 @@ export default function DashboardPage({
 
   return (
     <div className="space-y-6">
+      <DatasetLine summary={dataset.data ?? null} />
+
       {/* ── KPI row ── */}
       {kpis.initialLoading ? (
         <SkeletonStatGrid />

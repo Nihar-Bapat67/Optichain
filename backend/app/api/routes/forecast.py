@@ -2,24 +2,37 @@
 
 from __future__ import annotations
 
+import json
+import threading
+from collections import OrderedDict
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter
 
 from app.core.logging import get_logger
 from app.core.state import registry
+from app.db.repository import DataUnavailable, store
 from app.schemas import ForecastRequest, ForecastResponse
-from app.services import tables
 from app.services.demand_agent import run_forecast_agent
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["forecast"])
 
+# Forecasts are deterministic given (request, data version), so identical
+# requests are served from a small LRU instead of re-running seven models.
+_FORECAST_CACHE_SIZE = 256
+_forecast_cache: OrderedDict[str, dict] = OrderedDict()
+_forecast_lock = threading.Lock()
+
 
 @router.get("/api/influencer/summary", summary="MODEL2 metrics and sample distribution")
 def influencer_summary() -> dict[str, Any]:
-    metrics = tables.load_influencer_metrics()
-    sample = tables.load_influencer_sample()
+    try:
+        metrics = store.influencer_metrics()
+        sample = store.influencer_sample()
+    except DataUnavailable:
+        metrics, sample = None, None
 
     out: dict[str, Any] = {
         "metrics": metrics,
@@ -40,6 +53,17 @@ def influencer_summary() -> dict[str, Any]:
     return out
 
 
+def _history_for(product_id: str, on: str) -> tuple[dict | None, dict | None]:
+    """Catalogue profile and stored feature row for a SKU-day, when available."""
+    try:
+        profile = store.sku_profile(product_id)
+        if profile is None:
+            return None, None
+        return profile, store.feature_row(product_id, date.fromisoformat(on))
+    except DataUnavailable:
+        return None, None
+
+
 @router.post(
     "/api/demand/forecast",
     response_model=ForecastResponse,
@@ -47,6 +71,15 @@ def influencer_summary() -> dict[str, Any]:
 )
 def demand_forecast(body: ForecastRequest) -> ForecastResponse:
     """Three-model demand forecasting agent endpoint."""
+    version = store.version() if not store.init_error else None
+    key = json.dumps([version, body.model_dump()], sort_keys=True)
+    with _forecast_lock:
+        cached = _forecast_cache.get(key)
+        if cached is not None:
+            _forecast_cache.move_to_end(key)
+            return ForecastResponse(**cached)
+
+    profile, features = _history_for(body.product_id, body.date)
     result = run_forecast_agent(
         product_id=body.product_id,
         city=body.city,
@@ -54,5 +87,12 @@ def demand_forecast(body: ForecastRequest) -> ForecastResponse:
         influencer=body.influencer.model_dump() if body.influencer else None,
         campaign_active=body.campaign_active,
         models=registry.as_agent_payload(),
+        sku_profile=profile,
+        stored_features=features,
     )
+
+    with _forecast_lock:
+        _forecast_cache[key] = result
+        while len(_forecast_cache) > _FORECAST_CACHE_SIZE:
+            _forecast_cache.popitem(last=False)
     return ForecastResponse(**result)

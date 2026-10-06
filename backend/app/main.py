@@ -6,18 +6,24 @@ together: logging, middleware, artifact loading and router registration.
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.config import settings
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import configure_logging, get_logger, request_id_var
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.core.state import registry
+from app.db.engine import dispose_engine, get_engine
+from app.db.ingest import ensure_database
+from app.db.repository import DataUnavailable, store
 from app.services import artifacts
+from app.services.demand_agent import run_forecast_agent
 
 logger = get_logger(__name__)
 
@@ -34,6 +40,27 @@ Artifacts are loaded once at startup. Any that are missing are reported by
 `/api/health` rather than failing the service, so the dashboard can show a
 setup screen instead of an error.
 """
+
+
+def _warm_models() -> None:
+    """Run one throwaway prediction through every model.
+
+    scikit-learn and XGBoost import much of their prediction machinery lazily,
+    so without this the first visitor's forecast paid ~15s of import time.
+    """
+    started = time.perf_counter()
+    try:
+        run_forecast_agent(
+            product_id="WARMUP",
+            city="Mumbai",
+            date="2024-01-01",
+            influencer={"id": "warmup", "followers": 100000, "engagement_rate": 0.03, "platform": "instagram"},
+            campaign_active=True,
+            models=registry.as_agent_payload(),
+        )
+        logger.info("Models warmed in %.2fs", time.perf_counter() - started)
+    except Exception:
+        logger.exception("Model warm-up failed; first forecast will be slower")
 
 
 @asynccontextmanager
@@ -65,8 +92,24 @@ async def lifespan(_: FastAPI):
     for message in registry.load_messages:
         logger.warning("Artifact notice: %s", message)
 
+    _warm_models()
+
+    # A database failure must not take the service down: /api/health reports
+    # it and data endpoints answer 503, exactly as missing CSVs used to.
+    try:
+        store.init_status = ensure_database(get_engine())
+        store.init_error = None
+        store.invalidate()
+        if store.has_demand():
+            store.warm()
+        logger.info("Database: %s", store.init_status)
+    except Exception as e:
+        store.init_error = f"{type(e).__name__}: {e}"
+        logger.exception("Database initialisation failed")
+
     yield
 
+    dispose_engine()
     logger.info("Shutting down %s", settings.app_name)
 
 
@@ -106,6 +149,18 @@ def create_app() -> FastAPI:
         logger.warning(
             "CORS_ORIGINS is '*' — credentialed cross-origin requests are disabled. "
             "Set an explicit origin list for production."
+        )
+
+    @app.exception_handler(DataUnavailable)
+    async def _data_unavailable(_: Request, exc: DataUnavailable) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": f"Data unavailable: {exc}"})
+
+    @app.exception_handler(Exception)
+    async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+        # Traceback is logged by RequestContextMiddleware; clients get JSON, not text.
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "request_id": request_id_var.get()},
         )
 
     app.include_router(api_router)

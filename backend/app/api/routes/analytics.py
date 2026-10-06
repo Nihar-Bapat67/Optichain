@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
-
-from app.api.deps import demand_frame
+from app.api.deps import cached_json, parse_date_param
 from app.core.logging import get_logger
-from app.services import tables
-from app.services.risk_engine import compute_risks, count_signal_spikes
+from app.db.repository import store
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["analytics"])
@@ -18,72 +14,75 @@ router = APIRouter(tags=["analytics"])
 
 @router.get("/api/demand/timeseries", summary="Actual and predicted demand for one SKU")
 def demand_timeseries(
-    sku_id: str = Query(..., description="SKU identifier"),
+    request: Request,
+    sku_id: str = Query(..., max_length=64, description="SKU identifier"),
     date_from: str | None = Query(None, alias="from", description="Inclusive ISO start date"),
     date_to: str | None = Query(None, alias="to", description="Inclusive ISO end date"),
-) -> dict[str, Any]:
-    df = demand_frame()
-    if df is None:
-        raise HTTPException(503, "No demand data available.")
+) -> Response:
+    def build() -> dict:
+        start = parse_date_param(date_from, "from")
+        end = parse_date_param(date_to, "to")
+        if not store.has_demand():
+            raise HTTPException(503, "No demand data available.")
+        if not store.sku_exists(sku_id):
+            raise HTTPException(404, f"Unknown sku_id: {sku_id}")
 
-    d = df[df["sku_id"] == sku_id].copy()
-    if d.empty:
-        raise HTTPException(404, f"Unknown sku_id: {sku_id}")
+        d = store.demand_for_sku(sku_id)
+        if start is not None:
+            d = d[d["date"] >= start]
+        if end is not None:
+            d = d[d["date"] <= end]
 
-    d["date"] = pd.to_datetime(d["date"])
-    if date_from:
-        d = d[d["date"] >= pd.to_datetime(date_from)]
-    if date_to:
-        d = d[d["date"] <= pd.to_datetime(date_to)]
-    d = d.sort_values("date")
+        out = d[["date", "units_sold", "predicted_units"]].copy()
+        out["date"] = out["date"].dt.strftime("%Y-%m-%d")
+        # NULL predictions (ml_ready-only data) serialise as null rather than NaN.
+        out = out.astype(object).where(out.notna(), None)
+        return {"sku_id": sku_id, "points": out.to_dict(orient="records")}
 
-    cols = ["date", "units_sold", "predicted_units"]
-    use = [c for c in cols if c in d.columns]
-    out = d[use].copy()
-    out["date"] = out["date"].dt.strftime("%Y-%m-%d")
-
-    return {"sku_id": sku_id, "points": out.to_dict(orient="records")}
+    return cached_json(request, build)
 
 
 @router.get("/api/signals/timeseries", summary="External social and search signal volume")
 def signals_timeseries(
-    sku_id: str | None = Query(None, description="Optional SKU filter"),
+    request: Request,
+    sku_id: str | None = Query(None, max_length=64, description="Optional SKU filter"),
     date_from: str | None = Query(None, alias="from", description="Inclusive ISO start date"),
     date_to: str | None = Query(None, alias="to", description="Inclusive ISO end date"),
-) -> dict[str, Any]:
-    df = tables.load_signals()
-    if df is None:
-        raise HTTPException(503, "No signals.csv — run the ETL script.")
+    signal_type: str | None = Query(None, max_length=32, description="Optional type filter, e.g. social"),
+    limit: int | None = Query(None, ge=1, le=100_000, description="Keep only the most recent N points"),
+) -> Response:
+    def build() -> dict:
+        start = parse_date_param(date_from, "from")
+        end = parse_date_param(date_to, "to")
+        if not store.has_dataset("signals"):
+            raise HTTPException(503, "No signals.csv — run the ETL script.")
 
-    s = df.copy()
-    s["date"] = pd.to_datetime(s["date"])
-    if sku_id:
-        s = s[s["sku_id"] == sku_id]
-    if date_from:
-        s = s[s["date"] >= pd.to_datetime(date_from)]
-    if date_to:
-        s = s[s["date"] <= pd.to_datetime(date_to)]
-    s = s.sort_values("date")
-    s["date"] = s["date"].dt.strftime("%Y-%m-%d")
+        s = (store.signals_for_sku(sku_id) if sku_id else store.signals_all()).copy()
+        if start is not None:
+            s = s[s["date"] >= start]
+        if end is not None:
+            s = s[s["date"] <= end]
+        s = s.sort_values("date")
+        if signal_type:
+            s = s[s["signal_type"] == signal_type]
+        if limit:
+            s = s.tail(limit)
+        s["date"] = s["date"].dt.strftime("%Y-%m-%d")
+        return {"points": s.to_dict(orient="records")}
 
-    return {"points": s.to_dict(orient="records")}
+    return cached_json(request, build)
 
 
 @router.get("/api/kpis/dashboard", summary="Headline counts for the dashboard KPI row")
-def kpis_dashboard() -> dict[str, Any]:
-    demand = demand_frame()
-    inv = tables.load_inventory()
-    sig = tables.load_signals()
+def kpis_dashboard(request: Request) -> Response:
+    def build() -> dict:
+        has_inventory = store.has_dataset("inventory")
+        risks = store.risks() if store.has_demand() and has_inventory else []
+        return {
+            "stockout_skus": sum(1 for r in risks if r["risk_type"] == "stockout"),
+            "overstock_skus": sum(1 for r in risks if r["risk_type"] == "overstock"),
+            "signal_spikes": store.signal_spikes(),
+            "total_inventory_skus": len(store.inventory()) if has_inventory else 0,
+        }
 
-    risks: list[dict] = []
-    if demand is not None and inv is not None:
-        risks = compute_risks(demand, inv)
-
-    spikes = count_signal_spikes(sig) if sig is not None else 0
-
-    return {
-        "stockout_skus": len([r for r in risks if r["risk_type"] == "stockout"]),
-        "overstock_skus": len([r for r in risks if r["risk_type"] == "overstock"]),
-        "signal_spikes": spikes,
-        "total_inventory_skus": len(inv) if inv is not None else 0,
-    }
+    return cached_json(request, build)

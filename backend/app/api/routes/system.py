@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.config import settings
 from app.core.state import registry
+from app.db.repository import store
 from app.schemas import HealthResponse
 
 router = APIRouter(tags=["system"])
@@ -18,11 +18,13 @@ def health() -> HealthResponse:
     Used by the dashboard to decide between the setup screen and the live view.
     """
     msgs = list(registry.load_messages)
+    if store.init_error:
+        msgs.insert(0, f"Database unavailable: {store.init_error}")
 
-    predictions_present = settings.demand_predictions_path().is_file()
-    inventory_present = settings.inventory_path().is_file()
-    signals_present = settings.signals_path().is_file()
-    influencer_present = settings.influencer_metrics_path().is_file()
+    predictions_present = store.has_dataset("demand_predictions")
+    inventory_present = store.has_dataset("inventory")
+    signals_present = store.has_dataset("signals")
+    influencer_present = store.has_dataset("influencer_metrics")
 
     if not predictions_present:
         msgs.append(

@@ -5,16 +5,17 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { EmptyState, InlineError } from '../components/ui/States';
 import { ForecastForm, type ForecastFormState } from '../features/forecast/ForecastForm';
 import { ForecastResult } from '../features/forecast/ForecastResult';
-import { postJson, toErrorMessage } from '../lib/api';
+import { useAsyncData } from '../hooks/useAsyncData';
+import { fetchJson, isRetryable, postJson, toErrorMessage, unreachableHint } from '../lib/api';
 import { useToast } from '../providers/toastContext';
-import type { ForecastRequest, ForecastResponse } from '../types';
+import type { DatasetSummary, ForecastRequest, ForecastResponse, SkuMetaResponse } from '../types';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 const INITIAL_STATE: ForecastFormState = {
-  productId: 'SKU-WS-001',
+  productId: 'WS-CU-002',
   city: 'Mumbai',
   date: todayIso(),
   campaignActive: false,
@@ -49,6 +50,20 @@ export default function ForecastPage() {
   const [result, setResult] = useState<ForecastResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Suggestions only: the form works without them if either call fails.
+  const skus = useAsyncData<SkuMetaResponse | null>(
+    (signal) => fetchJson<SkuMetaResponse>('/api/meta/skus', signal).catch(() => null),
+    [],
+  );
+  const dataset = useAsyncData<DatasetSummary | null>(
+    (signal) => fetchJson<DatasetSummary>('/api/meta/dataset', signal).catch(() => null),
+    [],
+  );
+  const history =
+    dataset.data?.date_from && dataset.data?.date_to
+      ? { from: dataset.data.date_from, to: dataset.data.date_to }
+      : null;
 
   const updateField = useCallback(
     <K extends keyof ForecastFormState>(key: K, value: ForecastFormState[K]) => {
@@ -86,9 +101,11 @@ export default function ForecastPage() {
         `Three-model pipeline complete — ${response.final_demand.toLocaleString()} units predicted.`,
       );
     } catch (err) {
-      const message = toErrorMessage(err, 'Forecast failed');
+      const base = toErrorMessage(err, 'Forecast failed');
+      // Only connectivity failures get the "is the API up?" hint; a 422 already says what to fix.
+      const message = isRetryable(err) ? `${base} — ${unreachableHint()}` : base;
       setError(message);
-      toast.error('Forecast failed', message);
+      toast.error('Forecast failed', base);
     } finally {
       setLoading(false);
     }
@@ -103,14 +120,11 @@ export default function ForecastPage() {
           onChange={updateField}
           onSubmit={() => void runForecast()}
           loading={loading}
+          skuOptions={skus.data?.skus ?? []}
+          history={history}
         />
 
-        {error ? (
-          <InlineError
-            message={`${error} — confirm the backend is running on port 8000.`}
-            onRetry={() => void runForecast()}
-          />
-        ) : null}
+        {error ? <InlineError message={error} onRetry={() => void runForecast()} /> : null}
       </div>
 
       {/* ── Results ── */}

@@ -4,7 +4,9 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    # Builds the SQLite serving database from the committed CSVs at deploy time,
+    # so cold starts skip ingestion. The app also self-initialises if it is missing.
+    buildCommand: pip install -r requirements.txt && python -m app.db.ingest --no-backup
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:

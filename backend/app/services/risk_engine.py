@@ -60,14 +60,18 @@ def compute_risks(
 
     results: list[RiskRow] = []
 
+    # One pass instead of a full-table mask per inventory row; groupby keeps each
+    # SKU's rows in their original order, so the per-SKU frames are unchanged.
+    by_sku = {str(sku): g for sku, g in demand.groupby("sku_id", sort=False)}
+
     for _, row in inv.iterrows():
         sku = str(row["sku_id"])
         wh = str(row["warehouse_id"])
         stock = float(row["stock_on_hand"]) + float(row["on_order"])
         lead = int(row["lead_time_days"])
 
-        sku_d = demand[demand["sku_id"] == sku]
-        if sku_d.empty:
+        sku_d = by_sku.get(sku)
+        if sku_d is None or sku_d.empty:
             continue
 
         mean_act, mean_pred = _mean_daily(sku_d)
