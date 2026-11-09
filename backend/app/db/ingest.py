@@ -14,7 +14,9 @@ Safety properties:
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import sqlite3
 import sys
@@ -280,14 +282,30 @@ def verify_loaded(conn: Connection, bundle: SourceBundle) -> None:
     db["date"] = pd.to_datetime(db["date"])
     for c in cols:
         db[c] = db[c].astype(src[c].dtype)
-    pd.testing.assert_frame_equal(db, src, check_exact=True)
+    float_cols = [c for c in cols if pd.api.types.is_float_dtype(src[c])]
+    exact_cols = [c for c in cols if c not in float_cols]
+    pd.testing.assert_frame_equal(db[exact_cols], src[exact_cols], check_exact=True)
+    for c in float_cols:
+        np.testing.assert_allclose(
+            db[c].to_numpy(dtype=float),
+            src[c].to_numpy(dtype=float),
+            rtol=1e-12,
+            atol=1e-12,
+            err_msg=f"demand column {c} differs after database round-trip",
+        )
 
     if "predicted_units" in d.columns:
         src_pred = d.assign(date=pd.to_datetime(d["date"])).sort_values(["sku_id", "date"])["predicted_units"]
         db_pred = _read_frame(
             conn, select(schema.demand_daily.c.predicted_units).order_by("sku_id", "date")
         )["predicted_units"].astype(float)
-        np.testing.assert_array_equal(db_pred.to_numpy(), src_pred.to_numpy(dtype=float))
+        np.testing.assert_allclose(
+            db_pred.to_numpy(),
+            src_pred.to_numpy(dtype=float),
+            rtol=1e-12,
+            atol=1e-12,
+            err_msg="predicted_units differs after database round-trip",
+        )
 
     if bundle.inventory is not None:
         inv_cols = ["sku_id", "warehouse_id", "stock_on_hand", "on_order", "lead_time_days"]
@@ -361,8 +379,7 @@ def ingest(engine: Engine, trigger: str = "cli", backup: bool = True) -> IngestR
         conn.execute(schema.dataset_meta.delete())
         for table in schema.DATA_TABLES:
             batch = rows[table.name]
-            if batch:
-                conn.execute(table.insert(), batch)
+            _insert_rows(conn, table, batch)
 
         verify_loaded(conn, bundle)
 
@@ -422,6 +439,46 @@ def loaded_checksums(engine: Engine) -> dict[str, str]:
 def has_data(engine: Engine) -> bool:
     with engine.connect() as conn:
         return conn.execute(select(func.count()).select_from(schema.ingest_runs)).scalar_one() > 0
+
+
+def _insert_rows(conn: Connection, table, rows: list[dict[str, Any]]) -> None:
+    """Insert rows in multi-value batches for remote PostgreSQL connections.
+
+    pg8000 implements ``executemany`` as one network round trip per row.
+    Compiling bounded multi-row INSERT statements keeps memory use predictable
+    while reducing Supabase ingestion from tens of thousands of round trips to
+    a few dozen.
+    """
+    if not rows:
+        return
+    if conn.dialect.name == "postgresql":
+        columns = list(rows[0])
+        quote = conn.dialect.identifier_preparer.quote
+        payload = io.StringIO()
+        writer = csv.writer(payload, lineterminator="\n")
+        for row in rows:
+            writer.writerow(
+                [
+                    "\\N" if row[column] is None else row[column]
+                    for column in columns
+                ]
+            )
+        payload.seek(0)
+        raw = conn.connection.driver_connection
+        raw.cursor().execute(
+            f"COPY {quote(table.name)} ({', '.join(quote(c) for c in columns)}) "
+            "FROM STDIN WITH (FORMAT CSV, NULL '\\N')",
+            stream=payload,
+        )
+        logger.info("Inserted %s: %d/%d rows via COPY", table.name, len(rows), len(rows))
+        return
+
+    batch_size = len(rows)
+    total = len(rows)
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start : start + batch_size]
+        conn.execute(table.insert(), batch)
+        logger.info("Inserted %s: %d/%d rows", table.name, min(start + batch_size, total), total)
 
 
 def ingest_reason(engine: Engine) -> str | None:

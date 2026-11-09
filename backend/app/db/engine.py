@@ -43,8 +43,14 @@ def build_engine(url: str) -> Engine:
         )
         event.listen(engine, "connect", _apply_sqlite_pragmas)
     else:
+        connect_args = {}
+        if parsed.drivername == "postgresql+pg8000":
+            # pg8000 otherwise waits indefinitely when a Supabase pooler
+            # accepts TCP but does not complete the PostgreSQL handshake.
+            connect_args["timeout"] = 30
         engine = create_engine(
             url,
+            connect_args=connect_args,
             pool_size=settings.db_pool_size,
             max_overflow=settings.db_max_overflow,
             pool_pre_ping=True,
