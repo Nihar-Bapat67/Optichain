@@ -20,3 +20,7 @@ services:
         value: INFO
       - key: ENABLE_HSTS
         value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_REQUIRE_POSTGRES
+        value: "true"

@@ -47,8 +47,10 @@ class Settings(BaseSettings):
     conti_model_dir: str = "models"
 
     # ── Database ──────────────────────────────────────────────────────────
-    # Any SQLAlchemy URL. Empty → SQLite file at <root>/backend/var/optichain.sqlite3.
+    # Set this to the Supabase PostgreSQL connection string in deployed
+    # environments. Empty keeps the disposable local SQLite default.
     database_url: str = ""
+    database_require_postgres: bool = False
     # Build the database from the CSV sources at startup when it is empty, and
     # re-ingest when a source file's checksum no longer matches the last load.
     db_auto_init: bool = True
@@ -128,7 +130,17 @@ class Settings(BaseSettings):
 
     def resolved_database_url(self) -> str:
         if self.database_url.strip():
-            return self.database_url.strip()
+            url = self.database_url.strip()
+            # Supabase supplies standard PostgreSQL URLs. Use pg8000, a
+            # pure-Python driver, so local Windows security policies that
+            # block native libpq binaries do not prevent startup.
+            if url.startswith("postgres://"):
+                return "postgresql+pg8000://" + url[len("postgres://"):]
+            if url.startswith("postgresql://"):
+                return "postgresql+pg8000://" + url[len("postgresql://"):]
+            return url
+        if self.database_require_postgres:
+            raise ValueError("DATABASE_URL is required when DATABASE_REQUIRE_POSTGRES=true")
         return f"sqlite:///{self.sqlite_path().as_posix()}"
 
     def backup_dir(self) -> Path:
