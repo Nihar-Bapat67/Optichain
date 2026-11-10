@@ -41,5 +41,6 @@ def health() -> HealthResponse:
         inventory_present=inventory_present,
         signals_present=signals_present,
         influencer_metrics_present=influencer_present,
+        quantile_models_loaded=registry.quantiles_loaded,
         messages=msgs[:20],
     )

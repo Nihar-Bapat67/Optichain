@@ -14,6 +14,7 @@ export type Health = {
   inventory_present: boolean;
   signals_present: boolean;
   influencer_metrics_present: boolean;
+  quantile_models_loaded: boolean;
   messages: string[];
 };
 
@@ -38,6 +39,12 @@ export type Risk = {
   available_units: number;
   lead_time_days: number;
   reasons: string[];
+  p10_demand?: number;
+  p50_demand?: number;
+  p90_demand?: number;
+  safety_stock?: number;
+  stockout_probability?: number | null;
+  risk_basis?: string;
 };
 
 export type RiskResponse = { risks: Risk[]; count: number };
@@ -176,9 +183,26 @@ export type ForecastUplift = {
   decay_lambda: number;
 };
 
+export type ForecastQuantiles = { p10: number; p50: number; p90: number };
+export type ForecastInterval = {
+  nominal_coverage: number;
+  lower: number;
+  upper: number;
+};
+export type ForecastModelMetadata = {
+  model_type: string;
+  quantiles_available: boolean;
+  training_cutoff?: string | null;
+  model_version?: string | null;
+  quantile_crossing_corrected?: boolean;
+};
+
 export type ForecastResponse = {
   final_demand: number;
   breakdown: ForecastBreakdown;
   uplift: ForecastUplift;
   insights: string[];
+  quantiles?: ForecastQuantiles;
+  interval?: ForecastInterval;
+  model_metadata?: ForecastModelMetadata;
 };

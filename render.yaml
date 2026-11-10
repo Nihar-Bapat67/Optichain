@@ -4,9 +4,9 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    # Builds the SQLite serving database from the committed CSVs at deploy time,
-    # so cold starts skip ingestion. The app also self-initialises if it is missing.
-    buildCommand: pip install -r requirements.txt && python -m app.db.ingest --no-backup
+    # Ingest PostgreSQL and train optional quantile artifacts during the build;
+    # inference only loads artifacts at startup and never trains on requests.
+    buildCommand: pip install -r requirements.txt && python ../scripts/train_quantile_models.py && python -m app.db.ingest --no-backup
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
@@ -15,7 +15,7 @@ services:
       - key: PROJECT_ROOT
         value: /opt/render/project/src
       - key: CORS_ORIGINS
-        value: "*"
+        sync: false
       - key: LOG_LEVEL
         value: INFO
       - key: ENABLE_HSTS

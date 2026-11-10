@@ -45,12 +45,14 @@ class Settings(BaseSettings):
     analytics_dir: str = "analytics"
     case_study_data_dir: str = "data"
     conti_model_dir: str = "models"
+    quantile_model_dir: str = "quantile_models"
 
     # ── Database ──────────────────────────────────────────────────────────
-    # Set this to the Supabase PostgreSQL connection string in deployed
-    # environments. Empty keeps the disposable local SQLite default.
+    # Set this to the PostgreSQL connection string in every deployed
+    # environment. Local SQLite is only permitted by an explicit test/dev
+    # override, never as an implicit production fallback.
     database_url: str = ""
-    database_require_postgres: bool = False
+    database_require_postgres: bool = True
     # Build the database from the CSV sources at startup when it is empty, and
     # re-ingest when a source file's checksum no longer matches the last load.
     db_auto_init: bool = True
@@ -122,6 +124,12 @@ class Settings(BaseSettings):
     def conti_features_path(self) -> Path:
         return self.root() / self.conti_model_dir / "conti_features.json"
 
+    def quantile_model_dir_path(self) -> Path:
+        return self.root() / self.quantile_model_dir
+
+    def quantile_manifest_path(self) -> Path:
+        return self.quantile_model_dir_path() / "manifest.json"
+
     def var_dir(self) -> Path:
         return self.root() / "backend" / "var"
 
@@ -138,6 +146,8 @@ class Settings(BaseSettings):
                 return "postgresql+pg8000://" + url[len("postgres://"):]
             if url.startswith("postgresql://"):
                 return "postgresql+pg8000://" + url[len("postgresql://"):]
+            if self.database_require_postgres and url.startswith("sqlite"):
+                raise ValueError("DATABASE_URL must point to PostgreSQL when DATABASE_REQUIRE_POSTGRES=true")
             return url
         if self.database_require_postgres:
             raise ValueError("DATABASE_URL is required when DATABASE_REQUIRE_POSTGRES=true")

@@ -81,7 +81,12 @@ async def lifespan(_: FastAPI):
     registry.conti = conti
     registry.conti_features = conti_feats
 
-    registry.load_messages = model1_msgs + model2_msgs + conti_msgs
+    quantile_models, quantile_feats, quantile_manifest, quantile_msgs = artifacts.try_load_quantile_models()
+    registry.quantile_models = quantile_models
+    registry.quantile_features = quantile_feats
+    registry.quantile_manifest = quantile_manifest
+
+    registry.load_messages = model1_msgs + model2_msgs + conti_msgs + quantile_msgs
 
     logger.info(
         "Artifacts loaded — MODEL1: %s | MODEL2 targets: %d | conti: %s",
