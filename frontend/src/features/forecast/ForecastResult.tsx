@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   Cell,
   Pie,
   PieChart,
@@ -11,7 +13,7 @@ import {
   YAxis,
   CartesianGrid,
 } from 'recharts';
-import { Activity, ChevronRight, Lightbulb, PieChart as PieIcon } from 'lucide-react';
+import { Activity, ChevronRight, Lightbulb, PieChart as PieIcon, TrendingUp } from 'lucide-react';
 
 import { ChartTooltip } from '../../components/charts/ChartTooltip';
 import {
@@ -299,6 +301,66 @@ function InsightsCard({ insights }: { insights: string[] }) {
   );
 }
 
+function QuantileCard({ result }: { result: ForecastResponse }) {
+  const quantiles = result.quantiles;
+  if (!quantiles) {
+    return (
+      <Card>
+        <CardHeader title="Forecast uncertainty" description="Optional quantile artifacts" />
+        <CardBody>
+          <p className="text-sm text-content-subtle">
+            Quantile artifacts are not available. The point forecast remains active.
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const data = [
+    { name: 'P10', value: quantiles.p10, fill: CHART_COLORS.series2 },
+    { name: 'P50', value: quantiles.p50, fill: CHART_COLORS.series1 },
+    { name: 'P90', value: quantiles.p90, fill: CHART_COLORS.series3 },
+  ];
+  return (
+    <Card>
+      <CardHeader
+        title="Forecast uncertainty"
+        description="Conditional daily demand quantiles; P10–P90 is an 80% nominal interval"
+        icon={<TrendingUp className="h-3.5 w-3.5" />}
+      />
+      <CardBody className="space-y-4">
+        <div className="h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: CHART_COLORS.grid }} />
+              <YAxis tick={axisTick} tickLine={false} axisLine={false} width={48} />
+              <Tooltip
+                cursor={lineCursorProps}
+                content={<ChartTooltip valueFormatter={(value) => `${formatNumber(value)} units`} />}
+              />
+              <Bar dataKey="value" name="Demand" radius={[4, 4, 0, 0]}>
+                {data.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="grid grid-cols-3 gap-3 border-t border-border pt-4 text-center">
+          {data.map((entry) => (
+            <div key={entry.name}>
+              <p className="text-2xs uppercase tracking-wider text-content-subtle">{entry.name}</p>
+              <p className="mt-1 font-mono text-lg tabular-nums text-content">{formatNumber(entry.value)}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-content-subtle">
+          These are conditional quantile estimates, not a complete probability density.
+        </p>
+      </CardBody>
+    </Card>
+  );
+}
+
 export function ForecastResult({ result }: { result: ForecastResponse }) {
   return (
     <div className="animate-fade-in-up space-y-6">
@@ -339,6 +401,8 @@ export function ForecastResult({ result }: { result: ForecastResponse }) {
         <BreakdownCard result={result} />
         <LiftCurveCard result={result} />
       </div>
+
+      <QuantileCard result={result} />
 
       <InsightsCard insights={result.insights} />
 

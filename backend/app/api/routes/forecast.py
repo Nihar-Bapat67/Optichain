@@ -15,6 +15,7 @@ from app.core.state import registry
 from app.db.repository import DataUnavailable, store
 from app.schemas import ForecastRequest, ForecastResponse
 from app.services.demand_agent import run_forecast_agent
+from app.services.quantile_forecast import predict_quantiles
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["forecast"])
@@ -67,6 +68,7 @@ def _history_for(product_id: str, on: str) -> tuple[dict | None, dict | None]:
 @router.post(
     "/api/demand/forecast",
     response_model=ForecastResponse,
+    response_model_exclude_none=True,
     summary="Run the baseline × influencer uplift × city growth pipeline",
 )
 def demand_forecast(body: ForecastRequest) -> ForecastResponse:
@@ -90,6 +92,25 @@ def demand_forecast(body: ForecastRequest) -> ForecastResponse:
         sku_profile=profile,
         stored_features=features,
     )
+    if registry.quantiles_loaded:
+        try:
+            result.update(
+                predict_quantiles(
+                    models=registry.quantile_models,
+                    feature_names=registry.quantile_features or [],
+                    product_id=body.product_id,
+                    city=body.city,
+                    date=body.date,
+                    sku_profile=profile,
+                    stored_features=features,
+                )
+            )
+            if registry.quantile_manifest:
+                metadata = result["model_metadata"]
+                metadata["training_cutoff"] = registry.quantile_manifest.get("training_cutoff")
+                metadata["model_version"] = registry.quantile_manifest.get("model_version")
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            logger.exception("Quantile prediction unavailable for %s: %s", body.product_id, exc)
 
     with _forecast_lock:
         _forecast_cache[key] = result

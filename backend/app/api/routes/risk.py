@@ -9,12 +9,54 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.api.deps import cached_json
 from app.core.logging import get_logger
+from app.core.state import registry
 from app.db.repository import store
 from app.schemas import BriefResponse, SimulatePoint, SimulateRequest, SimulateResponse
 from app.services.brief import build_weekly_brief
+from app.services.quantile_forecast import predict_quantiles
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["risk"])
+
+
+def _add_quantile_context(risks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not registry.quantiles_loaded:
+        return risks
+    enriched: list[dict[str, Any]] = []
+    for risk in risks:
+        item = dict(risk)
+        history = store.demand_for_sku(risk["sku_id"])
+        if history.empty:
+            enriched.append(item)
+            continue
+        last = history.sort_values("date").iloc[-1]
+        profile = store.sku_profile(risk["sku_id"])
+        try:
+            forecast = predict_quantiles(
+                models=registry.quantile_models,
+                feature_names=registry.quantile_features or [],
+                product_id=risk["sku_id"],
+                city="",
+                date=pd.Timestamp(last["date"]).strftime("%Y-%m-%d"),
+                sku_profile=profile,
+            )
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            logger.exception("Could not add quantile risk context for %s: %s", risk["sku_id"], exc)
+            enriched.append(item)
+            continue
+        values = forecast["quantiles"]
+        item.update(
+            {
+                "p10_demand": values["p10"],
+                "p50_demand": values["p50"],
+                "p90_demand": values["p90"],
+                "safety_stock": max(0.0, values["p90"] - values["p50"]),
+                "stockout_probability": None,
+                "risk_basis": "daily quantile threshold; no cumulative scenario probability available",
+            }
+        )
+        enriched.append(item)
+    return enriched
 
 
 def _require_demand_and_inventory(message: str) -> None:
@@ -26,7 +68,7 @@ def _require_demand_and_inventory(message: str) -> None:
 def risk_skus(request: Request) -> Response:
     def build() -> dict[str, Any]:
         _require_demand_and_inventory("Need demand predictions and inventory.csv.")
-        risks = store.risks()
+        risks = _add_quantile_context(store.risks())
         return {"risks": risks, "count": len(risks)}
 
     return cached_json(request, build)

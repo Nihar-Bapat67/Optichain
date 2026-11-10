@@ -27,6 +27,11 @@ class ModelRegistry:
     conti: Any | None = None
     conti_features: list[str] | None = None
 
+    # Optional probabilistic daily-demand models, keyed by quantile.
+    quantile_models: dict[float, Any] = field(default_factory=dict)
+    quantile_features: list[str] | None = None
+    quantile_manifest: dict[str, Any] | None = None
+
     # Human-readable notes gathered while loading, surfaced by /api/health.
     load_messages: list[str] = field(default_factory=list)
 
@@ -55,6 +60,10 @@ class ModelRegistry:
             "conti": self.conti,
             "conti_feats": self.conti_features,
         }
+
+    @property
+    def quantiles_loaded(self) -> bool:
+        return set(self.quantile_models) == {0.1, 0.5, 0.9} and self.quantile_features is not None
 
 
 # Single instance shared by the app; populated during the lifespan startup hook.

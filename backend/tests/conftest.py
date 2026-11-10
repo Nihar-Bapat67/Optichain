@@ -15,6 +15,7 @@ from pathlib import Path
 
 _TMP = Path(tempfile.mkdtemp(prefix="optichain-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TMP / 'api.sqlite3').as_posix()}"
+os.environ["DATABASE_REQUIRE_POSTGRES"] = "false"
 os.environ["DB_BACKUP_DIR"] = str(_TMP / "backups")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 

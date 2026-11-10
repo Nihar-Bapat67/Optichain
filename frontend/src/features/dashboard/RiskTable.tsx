@@ -122,6 +122,22 @@ export function RiskTable({ risks }: { risks: Risk[] }) {
         header: 'Available',
         cell: (info) => formatNumber(info.getValue()),
       }),
+      columnHelper.display({
+        id: 'quantiles',
+        header: 'P10 / P50 / P90',
+        cell: (info) => {
+          const risk = info.row.original;
+          if (risk.p10_demand == null || risk.p50_demand == null || risk.p90_demand == null) {
+            return <span className="text-content-subtle">—</span>;
+          }
+          return (
+            <span className="font-mono text-xs tabular-nums">
+              {formatNumber(risk.p10_demand)} / {formatNumber(risk.p50_demand)} /{' '}
+              {formatNumber(risk.p90_demand)}
+            </span>
+          );
+        },
+      }),
       columnHelper.accessor('lead_time_days', {
         header: 'Lead (d)',
         cell: (info) => formatNumber(info.getValue()),

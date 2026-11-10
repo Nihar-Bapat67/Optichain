@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any
 
 import joblib
@@ -19,6 +20,8 @@ TARGET_COLS = [
     "peak_lift_pct",
     "decay_lambda",
 ]
+
+QUANTILES = (0.1, 0.5, 0.9)
 
 
 def try_load_model1() -> tuple[Any | None, list[str] | None, list[str]]:
@@ -111,3 +114,43 @@ def try_load_conti_model() -> tuple[Any | None, list[str] | None, list[str]]:
         msgs.append(f"Failed to load CONTI model: {e}")
         logger.exception("Failed to load CONTI model from %s", mp)
         return None, None, msgs
+
+
+def try_load_quantile_models() -> tuple[dict[float, Any], list[str] | None, dict[str, Any] | None, list[str]]:
+    """Load a compatible P10/P50/P90 model set, or return an unavailable set."""
+    msgs: list[str] = []
+    root = settings.quantile_model_dir_path()
+    manifest_path = settings.quantile_manifest_path()
+    if not root.is_dir() or not manifest_path.is_file():
+        logger.warning("Optional quantile artifacts unavailable: %s", root)
+        return {}, None, None, []
+
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        if manifest.get("model_type") != "lightgbm_quantile":
+            raise ValueError("unexpected quantile model type")
+        features = list(manifest["feature_names"])
+        entries = manifest["models"]
+        models: dict[float, Any] = {}
+        for alpha in QUANTILES:
+            entry = entries[str(alpha)]
+            path = root / entry["filename"]
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest != entry["sha256"]:
+                raise ValueError(f"checksum mismatch for alpha={alpha}")
+            models[alpha] = joblib.load(path)
+            expected_features = getattr(models[alpha], "n_features_in_", len(features))
+            if expected_features != len(features):
+                raise ValueError(f"feature count mismatch for alpha={alpha}")
+        if set(models) != set(QUANTILES):
+            raise ValueError("incomplete quantile model set")
+        logger.info("Quantile models loaded from %s", root)
+        return models, features, manifest, msgs
+    except (KeyError, TypeError, ValueError, OSError, ModuleNotFoundError) as exc:
+        message = f"Quantile artifacts unavailable: {exc}"
+        msgs.append(message)
+        logger.exception(message)
+        return {}, None, None, msgs
