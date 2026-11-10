@@ -93,7 +93,7 @@ export const DemandChart = memo(function DemandChart({ points }: DemandChartProp
         <Line
           type="monotone"
           dataKey="predicted_units"
-          name="Predicted"
+          name="MODEL1 prediction"
           stroke={CHART_COLORS.series1}
           strokeWidth={2}
           strokeDasharray="4 3"

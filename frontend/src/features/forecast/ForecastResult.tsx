@@ -41,14 +41,14 @@ function HeroDemand({ result }: { result: ForecastResponse }) {
             'radial-gradient(ellipse 60% 100% at 50% 0%, rgb(var(--c-accent)) 0%, transparent 70%)',
         }}
       />
-      <CardBody className="relative py-8 text-center">
+      <CardBody className="relative py-7 text-center sm:py-8">
         <p className="text-2xs font-semibold uppercase tracking-widest text-content-subtle">
-          Predicted final demand
+          Forecast output
         </p>
         <p className="mt-2 font-display text-6xl font-semibold tabular-nums text-content">
           {formatNumber(result.final_demand)}
         </p>
-        <p className="mt-1 text-sm text-content-subtle">units</p>
+        <p className="mt-1 text-sm text-content-subtle">units · blended three-model estimate</p>
 
         {result.uplift.enabled ? (
           <div className="mt-4 flex justify-center">
@@ -366,7 +366,7 @@ export function ForecastResult({ result }: { result: ForecastResponse }) {
     <div className="animate-fade-in-up space-y-6">
       <HeroDemand result={result} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { label: 'Baseline', value: result.breakdown.baseline, color: BREAKDOWN_COLORS[0] },
           {
@@ -382,17 +382,18 @@ export function ForecastResult({ result }: { result: ForecastResponse }) {
         ].map((stat) => (
           <div
             key={stat.label}
-            className="rounded-xl border border-border bg-surface-raised p-4 text-center shadow-xs"
+            className="rounded-xl border border-border bg-surface-raised p-4 text-left shadow-xs"
           >
-            <p className="text-2xs font-medium uppercase tracking-wider text-content-subtle">
-              {stat.label}
-            </p>
-            <p
-              className="mt-1.5 font-display text-2xl font-semibold tabular-nums"
-              style={{ color: stat.color }}
-            >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-subtle">
+                {stat.label}
+              </p>
+              <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: stat.color }} />
+            </div>
+            <p className="mt-2 font-display text-2xl font-semibold tabular-nums text-content">
               {formatNumber(stat.value, 1)}
             </p>
+            <p className="mt-0.5 text-xs text-content-subtle">units contributed</p>
           </div>
         ))}
       </div>

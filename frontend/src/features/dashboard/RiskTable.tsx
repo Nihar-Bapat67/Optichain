@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   createColumnHelper,
   flexRender,
@@ -10,7 +10,7 @@ import {
   type ColumnFiltersState,
   type SortingState,
 } from '@tanstack/react-table';
-import { ShieldCheck } from 'lucide-react';
+import { ChevronDown, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/States';
@@ -46,6 +46,7 @@ export function RiskTable({ risks }: { risks: Risk[] }) {
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [expandedRisk, setExpandedRisk] = useState<string | null>(null);
 
   const riskFilter: RiskFilter =
     (columnFilters.find((f) => f.id === 'risk_type')?.value as RiskFilter) ?? 'all';
@@ -245,8 +246,16 @@ export function RiskTable({ risks }: { risks: Risk[] }) {
             </tr>
           </THead>
           <TBody>
-            {rows.map((row) => (
-              <TR key={row.id}>
+            {rows.map((row) => {
+              const risk = row.original;
+              const rowKey = `${risk.sku_id}:${risk.warehouse_id}:${risk.risk_type}`;
+              const expanded = expandedRisk === rowKey;
+              return (
+                <Fragment key={row.id}>
+              <TR
+                className={expanded ? 'bg-surface-sunken/60' : undefined}
+                aria-expanded={expanded}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TD
                     key={cell.id}
@@ -255,11 +264,78 @@ export function RiskTable({ risks }: { risks: Risk[] }) {
                       numericColumns.has(cell.column.id) && cell.column.id !== 'severity'
                     }
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {cell.column.id === 'sku_id' ? (
+                      <button
+                        type="button"
+                        className="group inline-flex items-center gap-2 text-left"
+                        onClick={() => setExpandedRisk(expanded ? null : rowKey)}
+                        aria-label={`${expanded ? 'Hide' : 'Show'} details for ${risk.sku_id}`}
+                      >
+                        <ChevronDown
+                          aria-hidden
+                          className={`h-3.5 w-3.5 shrink-0 text-content-subtle transition-transform ${expanded ? 'rotate-180' : ''}`}
+                        />
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </button>
+                    ) : (
+                      flexRender(cell.column.columnDef.cell, cell.getContext())
+                    )}
                   </TD>
                 ))}
               </TR>
-            ))}
+              {expanded ? (
+                <TR key={`${row.id}-details`} className="bg-surface-sunken/40">
+                  <TD colSpan={row.getVisibleCells().length} className="px-5 py-4">
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                      <div>
+                        <p className="text-2xs font-semibold uppercase tracking-wider text-content-subtle">
+                          Risk rationale
+                        </p>
+                        <ul className="mt-2 space-y-1.5">
+                          {risk.reasons.map((reason) => (
+                            <li
+                              key={reason}
+                              className="flex gap-2 text-sm leading-relaxed text-content-muted"
+                            >
+                              <span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-accent" />
+                              <span>{reason}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:min-w-64">
+                        <div>
+                          <dt className="text-xs text-content-subtle">Lead-time demand</dt>
+                          <dd className="font-mono tabular-nums text-content">
+                            {formatNumber(risk.expected_demand_in_lead_time)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-content-subtle">Available units</dt>
+                          <dd className="font-mono tabular-nums text-content">
+                            {formatNumber(risk.available_units)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-content-subtle">Lead time</dt>
+                          <dd className="font-mono tabular-nums text-content">
+                            {formatNumber(risk.lead_time_days)} days
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-content-subtle">Coverage</dt>
+                          <dd className="font-mono tabular-nums text-content">
+                            {formatNumber(risk.weeks_of_cover, 1)} weeks
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </TD>
+                </TR>
+              ) : null}
+            </Fragment>
+              );
+            })}
           </TBody>
         </Table>
 

@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowUpRight,
   Boxes,
   Database,
   PackageX,
   Radio,
+  ShieldAlert,
   Terminal,
   TrendingUp,
 } from 'lucide-react';
@@ -212,6 +214,14 @@ export default function DashboardPage({
     [signals.data],
   );
 
+  const priorityRisks = useMemo(
+    () =>
+      [...(risks.data?.risks ?? [])]
+        .sort((a, b) => b.severity - a.severity)
+        .slice(0, 3),
+    [risks.data],
+  );
+
   // ── Gate states ───────────────────────────────────────────────────────────
   if (healthLoading && wakingSince !== null) return <WakingState startedAt={wakingSince} />;
 
@@ -256,7 +266,20 @@ export default function DashboardPage({
 
   return (
     <div className="space-y-6">
-      <DatasetLine summary={dataset.data ?? null} />
+      <header className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-2xs font-semibold uppercase tracking-[0.18em] text-accent">
+            Operations intelligence
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-content sm:text-3xl">
+            Control tower
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-content-muted">
+            A live view of inventory exposure, demand signals, and the decisions that need buyer attention.
+          </p>
+        </div>
+        <DatasetLine summary={dataset.data ?? null} />
+      </header>
 
       {/* ── KPI row ── */}
       {kpis.initialLoading ? (
@@ -294,12 +317,75 @@ export default function DashboardPage({
         </section>
       )}
 
+      {priorityRisks.length > 0 ? (
+        <section aria-labelledby="priority-actions-heading" className="space-y-3">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 id="priority-actions-heading" className="font-display text-lg font-semibold text-content">
+                Priority actions
+              </h2>
+              <p className="mt-0.5 text-sm text-content-subtle">
+                Highest-severity positions surfaced from the current risk register.
+              </p>
+            </div>
+            <span className="hidden text-xs text-content-subtle sm:block">Ranked by severity</span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {priorityRisks.map((risk) => (
+              <div
+                key={`${risk.sku_id}-${risk.warehouse_id}-${risk.risk_type}`}
+                className="rounded-xl border border-border bg-surface-raised p-4 shadow-xs"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        risk.risk_type === 'stockout'
+                          ? 'bg-danger-soft text-danger'
+                          : 'bg-warn-soft text-warn'
+                      }`}
+                    >
+                      {risk.risk_type === 'stockout' ? (
+                        <ShieldAlert className="h-4 w-4" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-sm font-medium text-content">
+                        {risk.sku_id}
+                      </p>
+                      <p className="text-xs text-content-subtle">{risk.warehouse_id}</p>
+                    </div>
+                  </div>
+                  <ArrowUpRight aria-hidden className="h-4 w-4 shrink-0 text-content-subtle" />
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-2xs font-semibold uppercase tracking-wider text-content-subtle">
+                      {risk.risk_type === 'stockout' ? 'Stockout exposure' : 'Overstock exposure'}
+                    </p>
+                    <p className="mt-1 text-sm text-content-muted">
+                      {formatNumber(risk.available_units)} available · {formatNumber(risk.weeks_of_cover, 1)} wks cover
+                    </p>
+                  </div>
+                  <p className="font-mono text-lg font-semibold tabular-nums text-content">
+                    {Math.round(risk.severity * 100)}%
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {/* ── Charts + brief ── */}
       <section className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <ChartCard
             title="Demand versus model"
-            description="Actual units sold against the MODEL1 prediction"
+            description="Actual units sold against the stored MODEL1 prediction; hover for daily values"
             icon={<TrendingUp className="h-3.5 w-3.5" />}
             height={288}
             loading={demand.initialLoading}

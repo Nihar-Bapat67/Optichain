@@ -112,7 +112,20 @@ export default function ForecastPage() {
   }, [form, toast]);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-5">
+    <div className="space-y-6">
+      <header className="border-b border-border pb-5">
+        <p className="text-2xs font-semibold uppercase tracking-[0.18em] text-brand">
+          Decision workspace
+        </p>
+        <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-content sm:text-3xl">
+          Demand forecast
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-content-muted">
+          Combine baseline demand, campaign uplift, and city growth into one explainable estimate.
+        </p>
+      </header>
+
+      <div className="grid gap-6 xl:grid-cols-5">
       {/* ── Inputs ── */}
       <div className="space-y-5 xl:col-span-2">
         <ForecastForm
@@ -177,6 +190,7 @@ export default function ForecastPage() {
             </div>
           </EmptyState>
         )}
+      </div>
       </div>
     </div>
   );
