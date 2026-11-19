@@ -55,6 +55,10 @@ def load_influencer_sample() -> pd.DataFrame | None:
     return _read_csv(settings.influencer_sample_path())
 
 
+def load_city_economic() -> pd.DataFrame | None:
+    return _read_csv(settings.city_economic_path(), parse_dates=["date"])
+
+
 def load_influencer_metrics() -> dict | None:
     path = settings.influencer_metrics_path()
     if not path.is_file():

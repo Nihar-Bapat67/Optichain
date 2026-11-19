@@ -908,7 +908,21 @@ print("  WS Demand Forecasting  Model Training")
 print("=" * 58)
 
 print("\nLoading ml_ready_data.csv...")
-df = pd.read_csv(f"{DATA_DIR}/ml_ready_data.csv", parse_dates=["date"])
+if os.environ.get("OPTICHAIN_TRAINING_SOURCE", "csv").lower() == "database":
+    import sys
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(ROOT, "backend"))
+    from app.db.engine import get_engine
+    from app.db.migrations import run_migrations
+    from app.db.training import load_demand_training_frame
+
+    engine = get_engine()
+    run_migrations(engine)
+    df = load_demand_training_frame(engine)
+    print("   Source  : validated database demand_daily")
+else:
+    df = pd.read_csv(f"{DATA_DIR}/ml_ready_data.csv", parse_dates=["date"])
 print(f"   Shape: {df.shape}")
 
 META_COLS   = ["date", "sku_id", "brand_id", "category"]

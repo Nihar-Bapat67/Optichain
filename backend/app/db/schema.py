@@ -97,6 +97,31 @@ dataset_meta = Table(
     Column("ingest_run_id", Integer, ForeignKey("ingest_runs.id"), nullable=False),
 )
 
+dataset_loads = Table(
+    "dataset_loads",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("ingest_run_id", Integer, ForeignKey("ingest_runs.id"), nullable=False),
+    Column("dataset", String(64), nullable=False),
+    Column("source_path", Text, nullable=False),
+    Column("source_sha256", String(64), nullable=False),
+    Column("row_count", Integer, nullable=False),
+)
+
+raw_demand_daily = Table(
+    "raw_demand_daily",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("ingest_run_id", Integer, ForeignKey("ingest_runs.id"), nullable=False),
+    Column("sku_id", String(64), nullable=False),
+    Column("date", Date, nullable=False),
+    Column("brand_id", String(16), nullable=False),
+    Column("category", String(64), nullable=False),
+    Column("units_sold", Integer, nullable=False),
+    UniqueConstraint("ingest_run_id", "sku_id", "date", name="uq_raw_demand_batch_sku_date"),
+    Index("ix_raw_demand_sku_date", "sku_id", "date"),
+)
+
 skus = Table(
     "skus",
     metadata,
@@ -163,5 +188,82 @@ documents = Table(
     Column("body", Text, nullable=False),
 )
 
+city_economic_daily = Table(
+    "city_economic_daily",
+    metadata,
+    Column("city", String(64), primary_key=True),
+    Column("category", String(64), primary_key=True),
+    Column("date", Date, primary_key=True),
+    Column("day_of_year", Integer, nullable=False),
+    Column("month", Integer, nullable=False),
+    Column("median_income", Float, nullable=False),
+    Column("median_home_price", Float, nullable=False),
+    Column("affordability_ratio", Float, nullable=False),
+    Column("income_velocity_30d", Float, nullable=False),
+    Column("price_velocity_30d", Float, nullable=False),
+    Column("rolling_units_30d", Float, nullable=False),
+    Column("extra_units_sold", Float, nullable=False),
+    Index("ix_city_economic_date", "date"),
+)
+
+model_versions = Table(
+    "model_versions",
+    metadata,
+    Column("model_version", String(128), primary_key=True),
+    Column("model_family", String(64), nullable=False),
+    Column("artifact_path", Text, nullable=False),
+    Column("artifact_sha256", String(64), nullable=False),
+    Column("feature_schema_version", String(64), nullable=False),
+    Column("training_cutoff", Date, nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("metrics_json", Text, nullable=False),
+    Column("created_at", String(40), nullable=False),
+)
+
+training_runs = Table(
+    "training_runs",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("model_family", String(64), nullable=False),
+    Column("source_ingest_run_id", Integer, ForeignKey("ingest_runs.id"), nullable=True),
+    Column("candidate_version", String(128), nullable=True),
+    Column("started_at", String(40), nullable=False),
+    Column("finished_at", String(40), nullable=True),
+    Column("status", String(32), nullable=False),
+    Column("metrics_json", Text, nullable=False, default="{}"),
+)
+
+forecast_runs = Table(
+    "forecast_runs",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("model_version", String(128), ForeignKey("model_versions.model_version"), nullable=False),
+    Column("generated_at", String(40), nullable=False),
+    Column("forecast_date_from", Date, nullable=False),
+    Column("forecast_date_to", Date, nullable=False),
+    Column("status", String(32), nullable=False),
+)
+
+forecasts = Table(
+    "forecasts",
+    metadata,
+    Column("forecast_run_id", Integer, ForeignKey("forecast_runs.id"), primary_key=True),
+    Column("model_version", String(128), ForeignKey("model_versions.model_version"), primary_key=True),
+    Column("sku_id", String(64), ForeignKey("skus.sku_id"), primary_key=True),
+    Column("forecast_date", Date, primary_key=True),
+    Column("p10", Float, nullable=True),
+    Column("p50", Float, nullable=False),
+    Column("p90", Float, nullable=True),
+    Column("generated_at", String(40), nullable=False),
+)
+
 # Tables the ingest job owns and fully replaces, in dependency order.
-DATA_TABLES = [skus, demand_daily, inventory, signals, influencer_sample, documents]
+DATA_TABLES = [
+    skus,
+    demand_daily,
+    inventory,
+    signals,
+    influencer_sample,
+    documents,
+    city_economic_daily,
+]

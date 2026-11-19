@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -52,6 +52,7 @@ class SourceBundle:
     signals: pd.DataFrame | None
     influencer_sample: pd.DataFrame | None
     influencer_metrics: dict | None
+    city_economic: pd.DataFrame | None
     paths: dict[str, Path] = field(default_factory=dict)
 
 
@@ -81,6 +82,7 @@ def source_paths() -> dict[str, Path]:
         "signals": settings.signals_path(),
         "influencer_sample": settings.influencer_sample_path(),
         "influencer_metrics": settings.influencer_metrics_path(),
+        "city_economic": settings.city_economic_path(),
     }
 
 
@@ -89,7 +91,14 @@ def present_source_checksums() -> dict[str, str]:
     paths = source_paths()
     out: dict[str, str] = {}
     demand_key = "demand_predictions" if paths["demand_predictions"].is_file() else "ml_ready"
-    for key in (demand_key, "inventory", "signals", "influencer_sample", "influencer_metrics"):
+    for key in (
+        demand_key,
+        "inventory",
+        "signals",
+        "influencer_sample",
+        "influencer_metrics",
+        "city_economic",
+    ):
         if paths[key].is_file():
             out[key] = sha256_file(paths[key])
     return out
@@ -116,6 +125,7 @@ def read_sources() -> SourceBundle:
         signals=csv_sources.load_signals(),
         influencer_sample=csv_sources.load_influencer_sample(),
         influencer_metrics=csv_sources.load_influencer_metrics(),
+        city_economic=csv_sources.load_city_economic(),
         paths=paths,
     )
 
@@ -203,6 +213,22 @@ def validate(bundle: SourceBundle) -> list[str]:
         if "ws_flag.1" in x.columns and not (x["ws_flag"] == x["ws_flag.1"]).all():
             warnings.append("influencer_sample: duplicated ws_flag columns disagree; keeping the first")
 
+    if bundle.city_economic is not None:
+        city = bundle.city_economic
+        city_cols = [
+            "date", "city", "category", "day_of_year", "month", "median_income",
+            "median_home_price", "affordability_ratio", "income_velocity_30d",
+            "price_velocity_30d", "rolling_units_30d", "extra_units_sold",
+        ]
+        _require_columns(city, city_cols, "city_economic")
+        _require_no_nulls(city, city_cols, "city_economic")
+        _require_unique(city, ["date", "city", "category"], "city_economic")
+        _coerce_int(city, ["day_of_year", "month"], "city_economic")
+        if (city["extra_units_sold"] < 0).any():
+            warnings.append(
+                f"city_economic: {int((city['extra_units_sold'] < 0).sum())} negative target rows"
+            )
+
     for w in warnings:
         logger.warning("Ingest validation: %s", w)
     return warnings
@@ -236,6 +262,7 @@ def build_rows(bundle: SourceBundle) -> dict[str, list[dict[str, Any]]]:
         "signals": [],
         "influencer_sample": [],
         "documents": [],
+        "city_economic_daily": [],
     }
 
     if bundle.inventory is not None:
@@ -259,6 +286,16 @@ def build_rows(bundle: SourceBundle) -> dict[str, list[dict[str, Any]]]:
 
     if bundle.influencer_metrics is not None:
         rows["documents"].append({"key": "influencer_metrics", "body": json.dumps(bundle.influencer_metrics)})
+
+    if bundle.city_economic is not None:
+        city_cols = [
+            "city", "category", "date", "day_of_year", "month", "median_income",
+            "median_home_price", "affordability_ratio", "income_velocity_30d",
+            "price_velocity_30d", "rolling_units_30d", "extra_units_sold",
+        ]
+        city = bundle.city_economic[city_cols].copy()
+        city["date"] = pd.to_datetime(city["date"]).dt.date
+        rows["city_economic_daily"] = _records(city)
 
     return rows
 
@@ -328,6 +365,10 @@ def verify_loaded(conn: Connection, bundle: SourceBundle) -> None:
         n = conn.execute(select(func.count()).select_from(schema.influencer_sample)).scalar_one()
         assert n == len(bundle.influencer_sample), "influencer_sample row count mismatch"
 
+    if bundle.city_economic is not None:
+        n = conn.execute(select(func.count()).select_from(schema.city_economic_daily)).scalar_one()
+        assert n == len(bundle.city_economic), "city_economic row count mismatch"
+
 
 # ── Backup ──────────────────────────────────────────────────────────────────
 
@@ -361,7 +402,58 @@ def backup_sqlite(engine: Engine) -> Path | None:
 # ── Orchestration ───────────────────────────────────────────────────────────
 
 
-def ingest(engine: Engine, trigger: str = "cli", backup: bool = True) -> IngestReport:
+def _merge_skus(conn: Connection, rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        updated = conn.execute(
+            schema.skus.update()
+            .where(schema.skus.c.sku_id == row["sku_id"])
+            .values(
+                brand_id=row["brand_id"],
+                category=row["category"],
+                brand_enc=row["brand_enc"],
+                category_enc=row["category_enc"],
+            )
+        )
+        if not updated.rowcount:
+            conn.execute(schema.skus.insert().values(**row))
+
+
+def _replace_keys(conn: Connection, table, rows: list[dict[str, Any]], keys: tuple[str, ...]) -> None:
+    for row in rows:
+        predicate = [table.c[key] == row[key] for key in keys]
+        conn.execute(table.delete().where(*predicate))
+    _insert_rows(conn, table, rows)
+
+
+def _merge_incremental_rows(conn: Connection, rows: dict[str, list[dict[str, Any]]]) -> None:
+    """Merge a monthly batch while retaining historical demand and signals."""
+    _merge_skus(conn, rows["skus"])
+    _replace_keys(conn, schema.demand_daily, rows["demand_daily"], ("sku_id", "date"))
+    _replace_keys(conn, schema.signals, rows["signals"], ("sku_id", "date", "signal_type"))
+
+    # Inventory and demo influencer data are snapshots without a date key.
+    # A monthly batch must provide the complete current snapshot for these tables.
+    if rows["inventory"]:
+        conn.execute(schema.inventory.delete())
+        _insert_rows(conn, schema.inventory, rows["inventory"])
+    if rows["influencer_sample"]:
+        conn.execute(schema.influencer_sample.delete())
+        _insert_rows(conn, schema.influencer_sample, rows["influencer_sample"])
+    if rows["documents"]:
+        for row in rows["documents"]:
+            conn.execute(schema.documents.delete().where(schema.documents.c.key == row["key"]))
+        _insert_rows(conn, schema.documents, rows["documents"])
+    if rows["city_economic_daily"]:
+        conn.execute(schema.city_economic_daily.delete())
+        _insert_rows(conn, schema.city_economic_daily, rows["city_economic_daily"])
+
+
+def ingest(
+    engine: Engine,
+    trigger: str = "cli",
+    backup: bool = True,
+    mode: Literal["replace", "incremental"] = "replace",
+) -> IngestReport:
     started = time.perf_counter()
     started_at = datetime.now(timezone.utc).isoformat()
     run_migrations(engine)
@@ -373,15 +465,20 @@ def ingest(engine: Engine, trigger: str = "cli", backup: bool = True) -> IngestR
 
     backup_path = backup_sqlite(engine) if backup and has_data(engine) else None
 
-    with engine.begin() as conn:
-        for table in reversed(schema.DATA_TABLES):
-            conn.execute(table.delete())
-        conn.execute(schema.dataset_meta.delete())
-        for table in schema.DATA_TABLES:
-            batch = rows[table.name]
-            _insert_rows(conn, table, batch)
+    if mode not in {"replace", "incremental"}:
+        raise ValueError(f"unsupported ingest mode: {mode}")
 
-        verify_loaded(conn, bundle)
+    with engine.begin() as conn:
+        if mode == "replace":
+            for table in reversed(schema.DATA_TABLES):
+                conn.execute(table.delete())
+            conn.execute(schema.dataset_meta.delete())
+            for table in schema.DATA_TABLES:
+                batch = rows[table.name]
+                _insert_rows(conn, table, batch)
+            verify_loaded(conn, bundle)
+        else:
+            _merge_incremental_rows(conn, rows)
 
         run_id = conn.execute(
             schema.ingest_runs.insert().values(
@@ -392,25 +489,35 @@ def ingest(engine: Engine, trigger: str = "cli", backup: bool = True) -> IngestR
             )
         ).inserted_primary_key[0]
 
+        raw_demand = bundle.demand[["sku_id", "date", "brand_id", "category", "units_sold"]].copy()
+        raw_demand["date"] = pd.to_datetime(raw_demand["date"]).dt.date
+        raw_rows = _records(raw_demand)
+        for row in raw_rows:
+            row["ingest_run_id"] = run_id
+        _insert_rows(conn, schema.raw_demand_daily, raw_rows)
+
         datasets = {
             bundle.demand_dataset: len(rows["demand_daily"]),
             "inventory": len(rows["inventory"]),
             "signals": len(rows["signals"]),
             "influencer_sample": len(rows["influencer_sample"]),
             "influencer_metrics": len(rows["documents"]),
+            "city_economic": len(rows["city_economic_daily"]),
         }
         for name, count in datasets.items():
             if name not in checksums:
                 continue
-            conn.execute(
-                schema.dataset_meta.insert().values(
-                    dataset=name,
-                    source_path=str(bundle.paths[name]),
-                    source_sha256=checksums[name],
-                    row_count=count,
-                    ingest_run_id=run_id,
-                )
-            )
+            values = {
+                "dataset": name,
+                "source_path": str(bundle.paths[name]),
+                "source_sha256": checksums[name],
+                "row_count": count,
+                "ingest_run_id": run_id,
+            }
+            if mode == "incremental":
+                conn.execute(schema.dataset_meta.delete().where(schema.dataset_meta.c.dataset == name))
+            conn.execute(schema.dataset_meta.insert().values(**values))
+            conn.execute(schema.dataset_loads.insert().values(**values))
 
     report = IngestReport(
         run_id=int(run_id),
@@ -514,6 +621,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Load the CSV sources into the serving database.")
     ap.add_argument("--no-backup", action="store_true", help="skip the SQLite backup step")
     ap.add_argument("--force", action="store_true", help="reload even if sources are unchanged")
+    ap.add_argument(
+        "--incremental",
+        action="store_true",
+        help="merge demand and signal rows while refreshing snapshot datasets",
+    )
     args = ap.parse_args(argv)
 
     configure_logging(settings.log_level)
@@ -524,7 +636,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Database already current; use --force to reload.")
         return 0
     try:
-        report = ingest(engine, trigger="cli", backup=not args.no_backup)
+        report = ingest(
+            engine,
+            trigger="cli",
+            backup=not args.no_backup,
+            mode="incremental" if args.incremental else "replace",
+        )
     except IngestValidationError as e:
         print(f"Validation failed, database untouched: {e}", file=sys.stderr)
         return 2

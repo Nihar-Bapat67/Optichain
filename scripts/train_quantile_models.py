@@ -20,9 +20,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, default=settings.ml_ready_path())
     parser.add_argument("--output", type=Path, default=settings.quantile_model_dir_path())
+    parser.add_argument("--source", choices=("csv", "database"), default="csv")
     args = parser.parse_args()
 
-    frame = pd.read_csv(args.input, parse_dates=["date"])
+    if args.source == "database":
+        from app.db.engine import get_engine
+        from app.db.migrations import run_migrations
+        from app.db.training import load_demand_training_frame
+
+        engine = get_engine()
+        run_migrations(engine)
+        frame = load_demand_training_frame(engine)
+    else:
+        frame = pd.read_csv(args.input, parse_dates=["date"])
     features = list(joblib.load(settings.feature_cols_path()))
     result = train_quantile_models(frame, features, args.output)
     print(result.manifest["metrics"])

@@ -22,8 +22,26 @@ def _m0001_initial(conn: Connection) -> None:
     schema.metadata.create_all(conn, tables=tables, checkfirst=True)
 
 
+def _m0002_dataset_load_history(conn: Connection) -> None:
+    schema.dataset_loads.create(conn, checkfirst=True)
+
+
+def _m0003_ml_data_contracts(conn: Connection) -> None:
+    for table in (
+        schema.raw_demand_daily,
+        schema.city_economic_daily,
+        schema.model_versions,
+        schema.training_runs,
+        schema.forecast_runs,
+        schema.forecasts,
+    ):
+        table.create(conn, checkfirst=True)
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[Connection], None]]] = [
     (1, "initial serving schema", _m0001_initial),
+    (2, "dataset load history", _m0002_dataset_load_history),
+    (3, "ML data contracts", _m0003_ml_data_contracts),
 ]
 
 

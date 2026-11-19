@@ -14,6 +14,7 @@ For production, replace artifacts with outputs from MODEL2_ML.ipynb.
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 from pathlib import Path
 
@@ -71,8 +72,24 @@ def _synthetic_frame() -> pd.DataFrame:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=("synthetic", "database"), default="synthetic")
+    args = parser.parse_args()
+
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    df = _synthetic_frame()
+    if args.source == "database":
+        sys.path.insert(0, str(ROOT / "backend"))
+        from app.db.engine import get_engine
+        from app.db.migrations import run_migrations
+        from app.db.training import load_influencer_training_frame
+
+        engine = get_engine()
+        run_migrations(engine)
+        df = load_influencer_training_frame(engine)
+        print(f"[ok] Loaded influencer training data from database ({len(df)} rows)")
+    else:
+        df = _synthetic_frame()
+        print(f"[ok] Generated synthetic influencer training data ({len(df)} rows)")
     feat_cols = [c for c in df.columns if c not in TARGETS]
 
     out_csv = ROOT / "features_engineered.csv"

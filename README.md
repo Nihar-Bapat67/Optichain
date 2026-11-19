@@ -84,6 +84,34 @@ The API serves from a database built from the CSVs in `analytics/` and `data/`. 
 python -m app.db.ingest --force
 ```
 
+For a monthly demand batch, use incremental mode. It preserves older demand
+and signal rows, upserts incoming SKU/date keys, and refreshes snapshot
+datasets only when they are supplied:
+```bash
+python -m app.db.ingest --incremental
+```
+
+Training can explicitly use the validated database demand/influencer tables
+instead of the legacy CSV or synthetic source:
+```bash
+# Model 1 baseline demand
+$env:OPTICHAIN_TRAINING_SOURCE="database"
+python scripts/model1_script.py
+
+# Influencer model
+python scripts/seed_and_train_influencer_demo.py --source database
+
+# Quantile demand models
+python scripts/train_quantile_models.py --source database
+
+# City/economic uplift model
+$env:OPTICHAIN_TRAINING_SOURCE="database"
+python scripts/conti_script.py
+
+# Complete monthly pipeline
+python scripts/monthly_pipeline.py
+```
+
 For Supabase, set `DATABASE_URL` to the project PostgreSQL connection string
 before starting the backend. Use the pooled connection string when the hosting
 platform creates many short-lived connections. Production deployment sets

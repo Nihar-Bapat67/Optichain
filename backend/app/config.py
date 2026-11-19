@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     features_engineered_file: str = "features_engineered.csv"
     analytics_dir: str = "analytics"
     case_study_data_dir: str = "data"
+    city_economic_file: str = "luxury_surge_dataset.csv"
     conti_model_dir: str = "models"
     quantile_model_dir: str = "quantile_models"
 
@@ -102,6 +103,9 @@ class Settings(BaseSettings):
 
     def signals_path(self) -> Path:
         return self.root() / self.case_study_data_dir / "signals.csv"
+
+    def city_economic_path(self) -> Path:
+        return self.root() / self.city_economic_file
 
     def best_model_path(self) -> Path:
         return self.root() / self.ws_model_dir / "best_model.pkl"

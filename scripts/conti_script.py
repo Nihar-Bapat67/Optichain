@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import os
 from datetime import datetime, timedelta
 
 np.random.seed(42)
@@ -11,6 +12,7 @@ cities = ["City_A", "City_B", "City_C"]
 categories = ["Luxury", "Standard"]
 days = 450
 start_date = datetime(2023, 1, 1)
+USE_DATABASE = os.environ.get("OPTICHAIN_TRAINING_SOURCE", "csv").lower() == "database"
 
 # -----------------------------
 # 2. CITY PROFILES (CRITICAL FIX)
@@ -164,14 +166,28 @@ df_encoded = pd.get_dummies(df, columns=["city", "category"], drop_first=True)
 print(df.head())
 print("\nDataset Shape:", df.shape)
 
-# Save if needed
-df.to_csv("luxury_surge_dataset.csv", index=False)
+# Preserve the source file when training from the validated database.
+if not USE_DATABASE:
+    df.to_csv("luxury_surge_dataset.csv", index=False)
 
 import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load dataset
-df = pd.read_csv("luxury_surge_dataset.csv")
+if USE_DATABASE:
+    import sys
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(ROOT, "backend"))
+    from app.db.engine import get_engine
+    from app.db.migrations import run_migrations
+    from app.db.training import load_city_training_frame
+
+    engine = get_engine()
+    run_migrations(engine)
+    df = load_city_training_frame(engine)
+else:
+    df = pd.read_csv("luxury_surge_dataset.csv")
 
 print("\n===== BASIC INFO =====")
 print(df.describe())
@@ -221,7 +237,10 @@ import matplotlib.pyplot as plt
 # ============================================
 # 2. LOAD DATA
 # ============================================
-df = pd.read_csv("luxury_surge_dataset.csv")
+if USE_DATABASE:
+    df = load_city_training_frame(engine)
+else:
+    df = pd.read_csv("luxury_surge_dataset.csv")
 
 print("Dataset Shape:", df.shape)
 print(df.head())
